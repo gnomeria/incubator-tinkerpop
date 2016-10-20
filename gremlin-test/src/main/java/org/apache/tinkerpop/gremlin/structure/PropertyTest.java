@@ -71,7 +71,7 @@ public class PropertyTest {
             final Vertex v = graph.addVertex("name", "marko");
             tryCommit(graph, (graph) -> {
                 final Vertex v1 = graph.vertices(v.id()).next();
-                final VertexProperty p = v1.property("nonexistent-key");
+                final VertexProperty p = v1.property("nonexistentkey");
                 assertEquals(VertexProperty.empty(), p);
             });
         }
@@ -191,10 +191,10 @@ public class PropertyTest {
         public void shouldGetValueThatIsNotPresentOnVertex() {
             final Vertex v = graph.addVertex();
             try {
-                v.value("does-not-exist");
+                v.value("doesnotexist");
                 fail("Call to Element.value() with a key that is not present should throw an exception");
             } catch (Exception ex) {
-                validateException(Property.Exceptions.propertyDoesNotExist(v, "does-not-exist"), ex);
+                validateException(Property.Exceptions.propertyDoesNotExist(v, "doesnotexist"), ex);
             }
 
         }
@@ -207,10 +207,10 @@ public class PropertyTest {
             final Vertex v = graph.addVertex();
             final Edge e = v.addEdge("self", v);
             try {
-                e.value("does-not-exist");
+                e.value("doesnotexist");
                 fail("Call to Element.value() with a key that is not present should throw an exception");
             } catch (Exception ex) {
-                validateException(Property.Exceptions.propertyDoesNotExist(e, "does-not-exist"), ex);
+                validateException(Property.Exceptions.propertyDoesNotExist(e, "doesnotexist"), ex);
             }
 
         }
@@ -255,7 +255,7 @@ public class PropertyTest {
         @Test
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
         @FeatureRequirement(featureClass = Graph.Features.VertexPropertyFeatures.class, feature = FEATURE_PROPERTIES)
-        @FeatureRequirement(featureClass = Graph.Features.VertexPropertyFeatures.class, feature = VertexPropertyFeatures.FEATURE_ADD_PROPERTY)
+        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_PROPERTY)
         public void testGraphVertexSetPropertyStandard() throws Exception {
             try {
                 final Vertex v = this.graph.addVertex();
@@ -472,13 +472,13 @@ public class PropertyTest {
         private Edge createEdgeForPropertyFeatureTests() {
             final Vertex vertexA = graph.addVertex();
             final Vertex vertexB = graph.addVertex();
-            return vertexA.addEdge(GraphManager.getGraphProvider().convertLabel("knows"), vertexB);
+            return vertexA.addEdge(graphProvider.convertLabel("knows"), vertexB);
         }
 
         private Edge createEdgeForPropertyFeatureTests(final String k, Object v) {
             final Vertex vertexA = graph.addVertex();
             final Vertex vertexB = graph.addVertex();
-            return vertexA.addEdge(GraphManager.getGraphProvider().convertLabel("knows"), vertexB, k, v);
+            return vertexA.addEdge(graphProvider.convertLabel("knows"), vertexB, k, v);
         }
     }
 }

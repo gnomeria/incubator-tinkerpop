@@ -46,13 +46,13 @@ public class IncrementalBulkLoader implements BulkLoader {
     @Override
     public Vertex getOrCreateVertex(final Vertex vertex, final Graph graph, final GraphTraversalSource g) {
         final Iterator<Vertex> iterator = useUserSuppliedIds()
-                ? graph.vertices(vertex.id())
-                : g.V().has(vertex.label(), getVertexIdProperty(), vertex.id());
+                ? g.V().hasId(vertex.id())
+                : g.V().has(vertex.label(), getVertexIdProperty(), vertex.id().toString());
         return iterator.hasNext()
                 ? iterator.next()
                 : useUserSuppliedIds()
-                ? graph.addVertex(T.id, vertex.id(), T.label, vertex.label())
-                : graph.addVertex(T.label, vertex.label(), getVertexIdProperty(), vertex.id());
+                ? g.addV(vertex.label()).property(T.id, vertex.id()).next()
+                : g.addV(vertex.label()).property(getVertexIdProperty(), vertex.id().toString()).next();
     }
 
     /**
@@ -71,8 +71,7 @@ public class IncrementalBulkLoader implements BulkLoader {
                 }
             });
         } else {
-            e = outVertex.addEdge(edge.label(), inVertex);
-            edge.properties().forEachRemaining(property -> e.property(property.key(), property.value()));
+            e = createEdge(edge, outVertex, inVertex, graph, g);
         }
         return e;
     }
@@ -84,7 +83,10 @@ public class IncrementalBulkLoader implements BulkLoader {
     public VertexProperty getOrCreateVertexProperty(final VertexProperty<?> property, final Vertex vertex, final Graph graph, final GraphTraversalSource g) {
         final VertexProperty<?> vp;
         final VertexProperty<?> existing = vertex.property(property.key());
-        if (!existing.isPresent() || !existing.value().equals(property.value())) {
+        if (!existing.isPresent()) {
+            return createVertexProperty(property, vertex, graph, g);
+        }
+        if (!existing.value().equals(property.value())) {
             vp = vertex.property(property.key(), property.value());
         } else {
             vp = existing;
@@ -105,7 +107,7 @@ public class IncrementalBulkLoader implements BulkLoader {
     public Vertex getVertex(final Vertex vertex, final Graph graph, final GraphTraversalSource g) {
         return useUserSuppliedIds()
                 ? getVertexById(vertex.id(), graph, g)
-                : g.V().has(vertex.label(), bulkLoaderVertexId, vertex.id()).next();
+                : g.V().has(vertex.label(), bulkLoaderVertexId, vertex.id().toString()).next();
     }
 
     /**

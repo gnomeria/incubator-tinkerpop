@@ -18,22 +18,28 @@
  */
 package org.apache.tinkerpop.gremlin.process.traversal.step.filter;
 
+import org.apache.tinkerpop.gremlin.process.computer.MemoryComputeKey;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
+import org.apache.tinkerpop.gremlin.process.traversal.step.Barrier;
 import org.apache.tinkerpop.gremlin.process.traversal.step.Bypassing;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.AbstractStep;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.TraverserRequirement;
+import org.apache.tinkerpop.gremlin.process.traversal.traverser.util.TraverserSet;
+import org.apache.tinkerpop.gremlin.process.traversal.util.FastNoSuchElementException;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.NoSuchElementException;
 import java.util.Set;
 
 /**
  * @author Matt Frantz (http://github.com/mhfrantz)
  */
-public final class TailGlobalStep<S> extends AbstractStep<S, S> implements Bypassing {
+public final class TailGlobalStep<S> extends AbstractStep<S, S> implements Bypassing, Barrier<TraverserSet<S>> {
 
     private final long limit;
     private Deque<Traverser.Admin<S>> tail;
@@ -51,7 +57,7 @@ public final class TailGlobalStep<S> extends AbstractStep<S, S> implements Bypas
     }
 
     @Override
-    public Traverser<S> processNextStart() {
+    public Traverser.Admin<S> processNextStart() {
         if (this.bypass) {
             // If we are bypassing this step, let everything through.
             return this.starts.next();
@@ -64,8 +70,11 @@ public final class TailGlobalStep<S> extends AbstractStep<S, S> implements Bypas
             final Traverser.Admin<S> oldest = this.tail.pop();
             // Trim any excess from the oldest traverser.
             final long excess = this.tailBulk - this.limit;
-            if (excess > 0)
+            if (excess > 0) {
                 oldest.setBulk(oldest.bulk() - excess);
+                // Account for the loss of excess in the tail buffer
+                this.tailBulk -= excess;
+            }
             // Account for the loss of bulk in the tail buffer as we emit the oldest traverser.
             this.tailBulk -= oldest.bulk();
             return oldest;
@@ -115,5 +124,40 @@ public final class TailGlobalStep<S> extends AbstractStep<S, S> implements Bypas
             this.tailBulk -= bulk;
         }
         this.tail.add(start);
+    }
+
+
+    @Override
+    public MemoryComputeKey<TraverserSet<S>> getMemoryComputeKey() {
+        return MemoryComputeKey.of(this.getId(), new RangeGlobalStep.RangeBiOperator<>(this.limit), false, true);
+    }
+
+    @Override
+    public void processAllStarts() {
+
+    }
+
+    @Override
+    public boolean hasNextBarrier() {
+        return this.starts.hasNext();
+    }
+
+    @Override
+    public TraverserSet<S> nextBarrier() throws NoSuchElementException {
+        if (!this.starts.hasNext())
+            throw FastNoSuchElementException.instance();
+        final TraverserSet<S> barrier = new TraverserSet<>();
+        while (this.starts.hasNext()) {
+            barrier.add(this.starts.next());
+        }
+        return barrier;
+    }
+
+    @Override
+    public void addBarrier(final TraverserSet<S> barrier) {
+        IteratorUtils.removeOnNext(barrier.iterator()).forEachRemaining(traverser -> {
+            traverser.setSideEffects(this.getTraversal().getSideEffects());
+            this.addStart(traverser);
+        });
     }
 }

@@ -31,13 +31,14 @@ import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
  */
 public enum TraverserRequirement {
 
-    OBJECT,
     BULK,
-    SINGLE_LOOP,
-    NESTED_LOOP,
     LABELED_PATH,
+    NESTED_LOOP,
+    OBJECT,
+    ONE_BULK,
     PATH,
     SACK,
     SIDE_EFFECTS,
+    SINGLE_LOOP
 
 }

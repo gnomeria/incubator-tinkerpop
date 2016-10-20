@@ -18,9 +18,6 @@
  */
 package org.apache.tinkerpop.gremlin.structure.io;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.module.SimpleModule;
 import org.apache.commons.configuration.Configuration;
 import org.apache.tinkerpop.gremlin.AbstractGremlinTest;
 import org.apache.tinkerpop.gremlin.FeatureRequirement;
@@ -46,10 +43,15 @@ import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONWriter;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.LegacyGraphSONReader;
 import org.apache.tinkerpop.gremlin.structure.io.util.CustomId;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
+import org.apache.tinkerpop.shaded.jackson.databind.JsonNode;
+import org.apache.tinkerpop.shaded.jackson.databind.ObjectMapper;
+import org.apache.tinkerpop.shaded.jackson.databind.module.SimpleModule;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.xml.XMLConstants;
 import javax.xml.transform.Source;
@@ -70,6 +72,7 @@ import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringWriter;
 import java.io.Writer;
+import java.net.URL;
 import java.util.List;
 import java.util.UUID;
 
@@ -78,10 +81,12 @@ import static org.apache.tinkerpop.gremlin.structure.Graph.Features.VariableFeat
 import static org.apache.tinkerpop.gremlin.structure.Graph.Features.VertexFeatures.FEATURE_USER_SUPPLIED_IDS;
 import static org.apache.tinkerpop.gremlin.structure.Graph.Features.VertexPropertyFeatures.*;
 import static org.apache.tinkerpop.gremlin.structure.io.IoCore.graphson;
+import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.Assume.assumeThat;
 
 /**
  * @author Joshua Shinavier (http://fortytwo.net)
@@ -90,6 +95,7 @@ import static org.junit.Assert.fail;
  */
 @RunWith(Enclosed.class)
 public class IoTest {
+    private static final Logger logger = LoggerFactory.getLogger(IoTest.class);
 
     public static class GraphMLTest extends AbstractGremlinTest {
         @Test
@@ -101,6 +107,17 @@ public class IoTest {
         public void shouldReadGraphML() throws IOException {
             readGraphMLIntoGraph(graph, "tinkerpop-classic.xml");
             assertClassicGraph(graph, false, true);
+        }
+
+        @Test
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
+        @FeatureRequirement(featureClass = VertexPropertyFeatures.class, feature = FEATURE_STRING_VALUES)
+        @FeatureRequirement(featureClass = VertexPropertyFeatures.class, feature = FEATURE_INTEGER_VALUES)
+        @FeatureRequirement(featureClass = EdgePropertyFeatures.class, feature = EdgePropertyFeatures.FEATURE_FLOAT_VALUES)
+        public void shouldReadGraphMLWithNoEdgeLabels() throws IOException {
+            readGraphMLIntoGraph(graph, "tinkerpop-no-edge-labels.xml");
+            assertNoEdgeGraph(graph, false, true);
         }
 
         @Test
@@ -218,6 +235,8 @@ public class IoTest {
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = FEATURE_USER_SUPPLIED_IDS)
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_STRING_IDS)
         public void shouldProperlyEncodeWithGraphML() throws Exception {
+            assumeThat("GraphML web site is down so XSD cannot be retrieved", is(isGraphMLXSDPresent()));
+
             final Vertex v = graph.addVertex(T.id, "1");
             v.property(VertexProperty.Cardinality.single, "text", "\u00E9");
 
@@ -245,6 +264,72 @@ public class IoTest {
 
             // need to manually close the "g2" instance
             graphProvider.clear(g2, configuration);
+        }
+
+        @Test
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = EdgePropertyFeatures.class, feature = FEATURE_STRING_VALUES)
+        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
+        public void shouldReadWriteSelfLoopingEdges() throws Exception {
+            final Graph source = graph;
+            final Vertex v1 = source.addVertex();
+            final Vertex v2 = source.addVertex();
+            v1.addEdge("CONTROL", v2);
+            v1.addEdge("SELFLOOP", v1);
+
+            final Configuration targetConf = graphProvider.newGraphConfiguration("target", this.getClass(), name.getMethodName(), null);
+            final Graph target = graphProvider.openTestGraph(targetConf);
+            try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
+                source.io(IoCore.graphml()).writer().create().writeGraph(os, source);
+                try (ByteArrayInputStream is = new ByteArrayInputStream(os.toByteArray())) {
+                    target.io(IoCore.graphml()).reader().create().readGraph(is, target);
+                }
+            } catch (IOException ioe) {
+                throw new RuntimeException(ioe);
+            }
+
+            assertEquals(IteratorUtils.count(source.vertices()), IteratorUtils.count(target.vertices()));
+            assertEquals(IteratorUtils.count(source.edges()), IteratorUtils.count(target.edges()));
+        }
+
+        private boolean isGraphMLXSDPresent() {
+            // when the graphml website goes down then tests won't pass - this allows the tests that rely on this
+            // resource to conditionally run
+            try {
+                new URL("http://graphml.graphdrawing.org/xmlns/1.1/graphml-structure.xsd").openConnection().connect();
+                return true;
+            } catch (Exception ex) {
+                return false;
+            }
+        }
+    }
+
+    public static final class GryoTest extends AbstractGremlinTest {
+
+        @Test
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = EdgePropertyFeatures.class, feature = FEATURE_STRING_VALUES)
+        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
+        public void shouldReadWriteSelfLoopingEdges() {
+            final Graph source = graph;
+            final Vertex v1 = source.addVertex();
+            final Vertex v2 = source.addVertex();
+            v1.addEdge("CONTROL", v2);
+            v1.addEdge("SELFLOOP", v1);
+
+            final Configuration targetConf = graphProvider.newGraphConfiguration("target", this.getClass(), name.getMethodName(), null);
+            final Graph target = graphProvider.openTestGraph(targetConf);;
+            try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
+                source.io(IoCore.gryo()).writer().create().writeGraph(os, source);
+                try (ByteArrayInputStream is = new ByteArrayInputStream(os.toByteArray())) {
+                    target.io(IoCore.gryo()).reader().create().readGraph(is, target);
+                }
+            } catch (IOException ioe) {
+                throw new RuntimeException(ioe);
+            }
+
+            assertEquals(IteratorUtils.count(source.vertices()), IteratorUtils.count(target.vertices()));
+            assertEquals(IteratorUtils.count(source.edges()), IteratorUtils.count(target.edges()));
         }
     }
 
@@ -315,7 +400,7 @@ public class IoTest {
             graph.addVertex(T.id, new CustomId("vertex", id));
 
             final SimpleModule module = new SimpleModule();
-            module.addSerializer(CustomId.class, new CustomId.CustomIdJacksonSerializer());
+            module.addSerializer(CustomId.class, new CustomId.CustomIdJacksonSerializerV1d0());
             final GraphWriter writer = graph.io(graphson).writer().mapper(
                     graph.io(graphson).mapper().addCustomModule(module).embedTypes(true).create()).create();
 
@@ -364,6 +449,32 @@ public class IoTest {
 
             // the id is lossy in migration because TP2 treated ID as String
             assertClassicGraph(graph, false, true);
+        }
+
+        @Test
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = EdgePropertyFeatures.class, feature = FEATURE_STRING_VALUES)
+        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
+        public void shouldReadWriteSelfLoopingEdges() throws Exception {
+            final Graph source = graph;
+            final Vertex v1 = source.addVertex();
+            final Vertex v2 = source.addVertex();
+            v1.addEdge("CONTROL", v2);
+            v1.addEdge("SELFLOOP", v1);
+
+            final Configuration targetConf = graphProvider.newGraphConfiguration("target", this.getClass(), name.getMethodName(), null);
+            final Graph target = graphProvider.openTestGraph(targetConf);
+            try (ByteArrayOutputStream os = new ByteArrayOutputStream()) {
+                source.io(IoCore.graphson()).writer().create().writeGraph(os, source);
+                try (ByteArrayInputStream is = new ByteArrayInputStream(os.toByteArray())) {
+                    target.io(IoCore.graphson()).reader().create().readGraph(is, target);
+                }
+            } catch (IOException ioe) {
+                throw new RuntimeException(ioe);
+            }
+
+            assertEquals(IteratorUtils.count(source.vertices()), IteratorUtils.count(target.vertices()));
+            assertEquals(IteratorUtils.count(source.edges()), IteratorUtils.count(target.edges()));
         }
     }
 
@@ -640,6 +751,35 @@ public class IoTest {
         assertToyGraph(g1, assertDouble, lossyForId, false);
     }
 
+    public static void assertNoEdgeGraph(final Graph g1, final boolean assertDouble, final boolean lossyForId) {
+        assertEquals(2, IteratorUtils.count(g1.vertices()));
+        assertEquals(1, IteratorUtils.count(g1.edges()));
+
+        final Vertex v1 = g1.traversal().V().has("name", "marko").next();
+        assertEquals(29, v1.<Integer>value("age").intValue());
+        assertEquals(2, v1.keys().size());
+        assertEquals(Vertex.DEFAULT_LABEL, v1.label());
+        assertId(g1, lossyForId, v1, 1);
+
+        final List<Edge> v1Edges = IteratorUtils.list(v1.edges(Direction.BOTH));
+        assertEquals(1, v1Edges.size());
+        v1Edges.forEach(e -> {
+        	System.out.println("SERGE: e.inVertex().value(\"name\") : " + e.inVertex().value("name").equals("vadas"));
+
+            if (e.inVertex().value("name").equals("vadas")) {
+                assertEquals(Edge.DEFAULT_LABEL, e.label());
+                if (assertDouble)
+                    assertWeightLoosely(0.5d, e);
+                else
+                    assertWeightLoosely(0.5f, e);
+                assertEquals(1, e.keys().size());
+                assertId(g1, lossyForId, e, 7);
+            } else {
+                fail("Edge not expected");
+            }
+        });
+    }
+
     public static void assertModernGraph(final Graph g1, final boolean assertDouble, final boolean lossyForId) {
         assertToyGraph(g1, assertDouble, lossyForId, true);
     }
@@ -648,7 +788,7 @@ public class IoTest {
         assertEquals(6, IteratorUtils.count(g1.vertices()));
         assertEquals(6, IteratorUtils.count(g1.edges()));
 
-        final Vertex v1 = (Vertex) g1.traversal().V().has("name", "marko").next();
+        final Vertex v1 = g1.traversal().V().has("name", "marko").next();
         assertEquals(29, v1.<Integer>value("age").intValue());
         assertEquals(2, v1.keys().size());
         assertEquals(assertSpecificLabel ? "person" : Vertex.DEFAULT_LABEL, v1.label());
@@ -660,25 +800,25 @@ public class IoTest {
             if (e.inVertex().value("name").equals("vadas")) {
                 assertEquals("knows", e.label());
                 if (assertDouble)
-                    assertEquals(0.5d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(0.5d, e);
                 else
-                    assertEquals(0.5f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(0.5f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 7);
             } else if (e.inVertex().value("name").equals("josh")) {
                 assertEquals("knows", e.label());
                 if (assertDouble)
-                    assertEquals(1.0, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(1.0, e);
                 else
-                    assertEquals(1.0f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(1.0f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 8);
             } else if (e.inVertex().value("name").equals("lop")) {
                 assertEquals("created", e.label());
                 if (assertDouble)
-                    assertEquals(0.4d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(0.4d, e);
                 else
-                    assertEquals(0.4f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(0.4f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 9);
             } else {
@@ -686,7 +826,7 @@ public class IoTest {
             }
         });
 
-        final Vertex v2 = (Vertex) g1.traversal().V().has("name", "vadas").next();
+        final Vertex v2 = g1.traversal().V().has("name", "vadas").next();
         assertEquals(27, v2.<Integer>value("age").intValue());
         assertEquals(2, v2.keys().size());
         assertEquals(assertSpecificLabel ? "person" : Vertex.DEFAULT_LABEL, v2.label());
@@ -698,9 +838,9 @@ public class IoTest {
             if (e.outVertex().value("name").equals("marko")) {
                 assertEquals("knows", e.label());
                 if (assertDouble)
-                    assertEquals(0.5d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(0.5d, e);
                 else
-                    assertEquals(0.5f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(0.5f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 7);
             } else {
@@ -708,7 +848,7 @@ public class IoTest {
             }
         });
 
-        final Vertex v3 = (Vertex) g1.traversal().V().has("name", "lop").next();
+        final Vertex v3 = g1.traversal().V().has("name", "lop").next();
         assertEquals("java", v3.<String>value("lang"));
         assertEquals(2, v2.keys().size());
         assertEquals(assertSpecificLabel ? "software" : Vertex.DEFAULT_LABEL, v3.label());
@@ -720,25 +860,25 @@ public class IoTest {
             if (e.outVertex().value("name").equals("peter")) {
                 assertEquals("created", e.label());
                 if (assertDouble)
-                    assertEquals(0.2d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(0.2d, e);
                 else
-                    assertEquals(0.2f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(0.2f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 12);
             } else if (e.outVertex().value("name").equals("josh")) {
                 assertEquals("created", e.label());
                 if (assertDouble)
-                    assertEquals(0.4d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(0.4d, e);
                 else
-                    assertEquals(0.4f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(0.4f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 11);
             } else if (e.outVertex().value("name").equals("marko")) {
                 assertEquals("created", e.label());
                 if (assertDouble)
-                    assertEquals(0.4d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(0.4d, e);
                 else
-                    assertEquals(0.4f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(0.4f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 9);
             } else {
@@ -746,7 +886,7 @@ public class IoTest {
             }
         });
 
-        final Vertex v4 = (Vertex) g1.traversal().V().has("name", "josh").next();
+        final Vertex v4 = g1.traversal().V().has("name", "josh").next();
         assertEquals(32, v4.<Integer>value("age").intValue());
         assertEquals(2, v4.keys().size());
         assertEquals(assertSpecificLabel ? "person" : Vertex.DEFAULT_LABEL, v4.label());
@@ -758,25 +898,25 @@ public class IoTest {
             if (e.inVertex().value("name").equals("ripple")) {
                 assertEquals("created", e.label());
                 if (assertDouble)
-                    assertEquals(1.0d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(1.0d, e);
                 else
-                    assertEquals(1.0f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(1.0f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 10);
             } else if (e.inVertex().value("name").equals("lop")) {
                 assertEquals("created", e.label());
                 if (assertDouble)
-                    assertEquals(0.4d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(0.4d, e);
                 else
-                    assertEquals(0.4f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(0.4f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 11);
             } else if (e.outVertex().value("name").equals("marko")) {
                 assertEquals("knows", e.label());
                 if (assertDouble)
-                    assertEquals(1.0d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(1.0d, e);
                 else
-                    assertEquals(1.0f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(1.0f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 8);
             } else {
@@ -784,7 +924,7 @@ public class IoTest {
             }
         });
 
-        final Vertex v5 = (Vertex) g1.traversal().V().has("name", "ripple").next();
+        final Vertex v5 = g1.traversal().V().has("name", "ripple").next();
         assertEquals("java", v5.<String>value("lang"));
         assertEquals(2, v5.keys().size());
         assertEquals(assertSpecificLabel ? "software" : Vertex.DEFAULT_LABEL, v5.label());
@@ -796,9 +936,9 @@ public class IoTest {
             if (e.outVertex().value("name").equals("josh")) {
                 assertEquals("created", e.label());
                 if (assertDouble)
-                    assertEquals(1.0d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(1.0d, e);
                 else
-                    assertEquals(1.0f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(1.0f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 10);
             } else {
@@ -806,7 +946,7 @@ public class IoTest {
             }
         });
 
-        final Vertex v6 = (Vertex) g1.traversal().V().has("name", "peter").next();
+        final Vertex v6 = g1.traversal().V().has("name", "peter").next();
         assertEquals(35, v6.<Integer>value("age").intValue());
         assertEquals(2, v6.keys().size());
         assertEquals(assertSpecificLabel ? "person" : Vertex.DEFAULT_LABEL, v6.label());
@@ -818,15 +958,39 @@ public class IoTest {
             if (e.inVertex().value("name").equals("lop")) {
                 assertEquals("created", e.label());
                 if (assertDouble)
-                    assertEquals(0.2d, e.value("weight"), 0.0001d);
+                    assertWeightLoosely(0.2d, e);
                 else
-                    assertEquals(0.2f, e.value("weight"), 0.0001f);
+                    assertWeightLoosely(0.2f, e);
                 assertEquals(1, e.keys().size());
                 assertId(g1, lossyForId, e, 12);
             } else {
                 fail("Edge not expected");
             }
         });
+    }
+
+    private static void assertWeightLoosely(final double expected, final Edge e) {
+        try {
+            assertEquals(expected, e.value("weight"), 0.0001d);
+        } catch (Exception ex) {
+            // for graphs that have strong typing via schema it is possible that a value that came across as graphson
+            // with lossiness will end up having a value expected to double to be coerced to float by the underlying
+            // graph.
+            logger.warn("Attempting to assert weight as float for {} - if your graph is strongly typed from schema this is likely expected", e);
+            assertEquals(new Double(expected).floatValue(), e.value("weight"), 0.0001f);
+        }
+    }
+
+    private static void assertWeightLoosely(final float expected, final Edge e) {
+        try {
+            assertEquals(expected, e.value("weight"), 0.0001f);
+        } catch (Exception ex) {
+            // for graphs that have strong typing via schema it is possible that a value that came across as graphson
+            // with lossiness will end up having a value expected to float to be coerced to double by the underlying
+            // graph.
+            logger.warn("Attempting to assert weight as double for {} - if your graph is strongly typed from schema this is likely expected", e);
+            assertEquals(new Float(expected).doubleValue(), e.value("weight"), 0.0001d);
+        }
     }
 
     private static void assertId(final Graph g, final boolean lossyForId, final Element e, final Object expected) {

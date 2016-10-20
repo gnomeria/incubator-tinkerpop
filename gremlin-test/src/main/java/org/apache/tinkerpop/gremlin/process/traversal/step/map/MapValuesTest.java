@@ -23,17 +23,19 @@ import org.apache.tinkerpop.gremlin.process.AbstractGremlinProcessTest;
 import org.apache.tinkerpop.gremlin.process.GremlinProcessRunner;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.util.Arrays;
-import java.util.List;
 
 import static org.apache.tinkerpop.gremlin.LoadGraphWith.GraphData.MODERN;
 
 /**
  * @author Daniel Kuppitz (http://gremlin.guru)
+ * @deprecated As of release 3.1.0-incubating
  */
+@Deprecated
 @RunWith(GremlinProcessRunner.class)
 public abstract class MapValuesTest extends AbstractGremlinProcessTest {
 
@@ -46,13 +48,17 @@ public abstract class MapValuesTest extends AbstractGremlinProcessTest {
     @Test
     @LoadGraphWith(MODERN)
     public void g_V_outE_valuesXweightX_groupCount_mapValues() {
-        final List<Traversal<Vertex, Long>> traversals = Arrays.asList(
-                get_g_V_outE_valuesXweightX_groupCount_mapValues(),
-                get_g_V_outE_valuesXweightX_groupCount_unfold_mapValues());
-        for (final Traversal<Vertex, Long> traversal : traversals) {
-            printTraversalForm(traversal);
-            checkResults(Arrays.asList(1l, 1l, 2l, 2l), traversal);
-        }
+        final Traversal<Vertex, Long> traversal = get_g_V_outE_valuesXweightX_groupCount_mapValues();
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList(1l, 1l, 2l, 2l), traversal);
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_outE_valuesXweightX_groupCount_unfold_mapValues() {
+        final Traversal<Vertex, Long> traversal = get_g_V_outE_valuesXweightX_groupCount_unfold_mapValues();
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList(1l, 1l, 2l, 2l), traversal);
     }
 
     @Test
@@ -63,6 +69,10 @@ public abstract class MapValuesTest extends AbstractGremlinProcessTest {
         checkResults(Arrays.asList(2l, 2l), traversal);
     }
 
+    /**
+     * @deprecated As of release 3.1.0-incubating
+     */
+    @Deprecated
     public static class Traversals extends MapValuesTest {
 
         @Override

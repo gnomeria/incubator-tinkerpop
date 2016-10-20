@@ -20,10 +20,6 @@ package org.apache.tinkerpop.gremlin.server.handler;
 
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.Timer;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.tinkerpop.gremlin.driver.MessageSerializer;
 import org.apache.tinkerpop.gremlin.driver.Tokens;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseMessage;
@@ -33,6 +29,7 @@ import org.apache.tinkerpop.gremlin.groovy.engine.GremlinExecutor;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalSource;
 import org.apache.tinkerpop.gremlin.server.GraphManager;
 import org.apache.tinkerpop.gremlin.server.GremlinServer;
+import org.apache.tinkerpop.gremlin.server.Settings;
 import org.apache.tinkerpop.gremlin.server.util.MetricManager;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.util.function.FunctionUtils;
@@ -53,6 +50,10 @@ import io.netty.handler.codec.http.QueryStringDecoder;
 import io.netty.util.CharsetUtil;
 import io.netty.util.ReferenceCountUtil;
 import org.apache.commons.lang3.exception.ExceptionUtils;
+import org.apache.tinkerpop.shaded.jackson.databind.JsonNode;
+import org.apache.tinkerpop.shaded.jackson.databind.ObjectMapper;
+import org.apache.tinkerpop.shaded.jackson.databind.node.ArrayNode;
+import org.apache.tinkerpop.shaded.jackson.databind.node.ObjectNode;
 import org.javatuples.Pair;
 import org.javatuples.Quartet;
 import org.slf4j.Logger;
@@ -64,6 +65,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -82,11 +84,16 @@ import static io.netty.handler.codec.http.HttpHeaders.is100ContinueExpected;
 import static io.netty.handler.codec.http.HttpHeaders.isKeepAlive;
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpMethod.POST;
-import static io.netty.handler.codec.http.HttpResponseStatus.*;
+import static io.netty.handler.codec.http.HttpResponseStatus.BAD_REQUEST;
+import static io.netty.handler.codec.http.HttpResponseStatus.CONTINUE;
+import static io.netty.handler.codec.http.HttpResponseStatus.INTERNAL_SERVER_ERROR;
+import static io.netty.handler.codec.http.HttpResponseStatus.METHOD_NOT_ALLOWED;
+import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
+import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 /**
- * Handler that processes HTTP requests to the REST Gremlin endpoint.
+ * Handler that processes HTTP requests to the HTTP Gremlin endpoint.
  *
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
@@ -97,7 +104,13 @@ public class HttpGremlinEndpointHandler extends ChannelInboundHandlerAdapter {
     static final Meter errorMeter = MetricManager.INSTANCE.getMeter(name(GremlinServer.class, "errors"));
 
     private static final String ARGS_BINDINGS_DOT = Tokens.ARGS_BINDINGS + ".";
+
+    /**
+     * @deprecated As of release 3.1.0, replaced by {@link #ARGS_ALIASES_DOT}.
+     */
+    @Deprecated
     private static final String ARGS_REBINDINGS_DOT = Tokens.ARGS_REBINDINGS + ".";
+    private static final String ARGS_ALIASES_DOT = Tokens.ARGS_ALIASES + ".";
 
     private static final Timer evalOpTimer = MetricManager.INSTANCE.getTimer(name(GremlinServer.class, "op", "eval"));
 
@@ -114,14 +127,18 @@ public class HttpGremlinEndpointHandler extends ChannelInboundHandlerAdapter {
 
     private final GremlinExecutor gremlinExecutor;
     private final GraphManager graphManager;
-    final Pattern pattern = Pattern.compile("(.*);q=(.*)");
+    private final Settings settings;
+
+    private static final Pattern pattern = Pattern.compile("(.*);q=(.*)");
 
     public HttpGremlinEndpointHandler(final Map<String, MessageSerializer> serializers,
                                       final GremlinExecutor gremlinExecutor,
-                                      final GraphManager graphManager) {
+                                      final GraphManager graphManager,
+                                      final Settings settings) {
         this.serializers = serializers;
         this.gremlinExecutor = gremlinExecutor;
         this.graphManager = graphManager;
+        this.settings = settings;
     }
 
     @Override
@@ -163,7 +180,7 @@ public class HttpGremlinEndpointHandler extends ChannelInboundHandlerAdapter {
             }
 
             final String origin = req.headers().get(ORIGIN);
-            final boolean keepAlive = !isKeepAlive(req);
+            final boolean keepAlive = isKeepAlive(req);
 
             // not using the req any where below here - assume it is safe to release at this point.
             ReferenceCountUtil.release(msg);
@@ -220,20 +237,27 @@ public class HttpGremlinEndpointHandler extends ChannelInboundHandlerAdapter {
                             final ResponseMessage responseMessage = ResponseMessage.build(UUID.randomUUID())
                                     .code(ResponseStatusCode.SUCCESS)
                                     .result(IteratorUtils.asList(o)).create();
+
+                            // http server is sessionless and must handle commit on transactions. the commit occurs
+                            // before serialization to be consistent with how things work for websocket based
+                            // communication.  this means that failed serialization does not mean that you won't get
+                            // a commit to the database
+                            attemptCommit(requestArguments.getValue3(), graphManager, settings.strictTransactionManagement);
+
                             try {
-                                Object wrappedBuffer = Unpooled.wrappedBuffer(
-                                        serializer.getValue1().serializeResponseAsString(responseMessage).getBytes(UTF8));
-                                // http server is sessionless and must handle commit on transactions
-                                this.graphManager.commitAll();
-                                return wrappedBuffer;
+                                return Unpooled.wrappedBuffer(serializer.getValue1().serializeResponseAsString(responseMessage).getBytes(UTF8));
                             } catch (Exception ex) {
                                 logger.warn(String.format("Error during serialization for %s", responseMessage), ex);
                                 throw ex;
                             }
                         }));
 
-                evalFuture.exceptionally(t -> {
-                    sendError(ctx, INTERNAL_SERVER_ERROR, String.format("Error encountered evaluating script: %s", requestArguments.getValue0()));
+                evalFuture.exceptionally(t -> {		
+					if (t.getMessage() != null)
+						sendError(ctx, INTERNAL_SERVER_ERROR, t.getMessage(), Optional.of(t));
+					else
+						sendError(ctx, INTERNAL_SERVER_ERROR, String.format("Error encountered evaluating script: %s", requestArguments.getValue0())
+									 , Optional.of(t));			
                     promise.setFailure(t);
                     return null;
                 });
@@ -317,6 +341,7 @@ public class HttpGremlinEndpointHandler extends ChannelInboundHandlerAdapter {
         if (request.getMethod() == GET) {
             final QueryStringDecoder decoder = new QueryStringDecoder(request.getUri());
             final List<String> gremlinParms = decoder.parameters().get(Tokens.ARGS_GREMLIN);
+
             if (null == gremlinParms || gremlinParms.size() == 0)
                 throw new IllegalArgumentException("no gremlin script supplied");
             final String script = gremlinParms.get(0);
@@ -327,14 +352,23 @@ public class HttpGremlinEndpointHandler extends ChannelInboundHandlerAdapter {
             decoder.parameters().entrySet().stream().filter(kv -> kv.getKey().startsWith(ARGS_BINDINGS_DOT))
                     .forEach(kv -> bindings.put(kv.getKey().substring(ARGS_BINDINGS_DOT.length()), kv.getValue().get(0)));
 
-            final Map<String, String> rebindings = new HashMap<>();
-            decoder.parameters().entrySet().stream().filter(kv -> kv.getKey().startsWith(ARGS_REBINDINGS_DOT))
-                    .forEach(kv -> rebindings.put(kv.getKey().substring(ARGS_REBINDINGS_DOT.length()), kv.getValue().get(0)));
+            // don't allow both rebindings and aliases parameters as they are the same thing. aliases were introduced
+            // as of 3.1.0 as a replacement for rebindings. this check can be removed when rebindings are completely
+            // removed from the protocol
+            final boolean hasRebindings = decoder.parameters().entrySet().stream().anyMatch(kv -> kv.getKey().startsWith(ARGS_REBINDINGS_DOT));
+            final boolean hasAliases = decoder.parameters().entrySet().stream().anyMatch(kv -> kv.getKey().startsWith(ARGS_ALIASES_DOT));
+            if (hasRebindings && hasAliases)
+                throw new IllegalArgumentException("prefer use of the 'aliases' parameter over 'rebindings' and do not use both");
+
+            final Map<String, String> aliases = new HashMap<>();
+            final String rebindingOrAliasParameter = hasRebindings ? ARGS_REBINDINGS_DOT : ARGS_ALIASES_DOT;
+            decoder.parameters().entrySet().stream().filter(kv -> kv.getKey().startsWith(rebindingOrAliasParameter))
+                    .forEach(kv -> aliases.put(kv.getKey().substring(rebindingOrAliasParameter.length()), kv.getValue().get(0)));
 
             final List<String> languageParms = decoder.parameters().get(Tokens.ARGS_LANGUAGE);
             final String language = (null == languageParms || languageParms.size() == 0) ? null : languageParms.get(0);
 
-            return Quartet.with(script, bindings, language, rebindings);
+            return Quartet.with(script, bindings, language, aliases);
         } else {
             final JsonNode body;
             try {
@@ -354,18 +388,27 @@ public class HttpGremlinEndpointHandler extends ChannelInboundHandlerAdapter {
             if (bindingsNode != null)
                 bindingsNode.fields().forEachRemaining(kv -> bindings.put(kv.getKey(), fromJsonNode(kv.getValue())));
 
-            final JsonNode rebindingsNode = body.get(Tokens.ARGS_REBINDINGS);
-            if (rebindingsNode != null && !rebindingsNode.isObject())
-                throw new IllegalArgumentException("rebindings must be a Map");
+            // don't allow both rebindings and aliases parameters as they are the same thing. aliases were introduced
+            // as of 3.1.0 as a replacement for rebindings. this check can be removed when rebindings are completely
+            // removed from the protocol
+            final boolean hasRebindings = body.has(Tokens.ARGS_REBINDINGS);
+            final boolean hasAliases = body.has(Tokens.ARGS_ALIASES);
+            if (hasRebindings && hasAliases)
+                throw new IllegalArgumentException("prefer use of the 'aliases' parameter over 'rebindings' and do not use both");
 
-            final Map<String, String> rebindings = new HashMap<>();
-            if (rebindingsNode != null)
-                rebindingsNode.fields().forEachRemaining(kv -> rebindings.put(kv.getKey(), kv.getValue().asText()));
+            final String rebindingOrAliasParameter = hasRebindings ? Tokens.ARGS_REBINDINGS : Tokens.ARGS_ALIASES;
+            final JsonNode aliasesNode = body.get(rebindingOrAliasParameter);
+            if (aliasesNode != null && !aliasesNode.isObject())
+                throw new IllegalArgumentException("aliases must be a Map");
+
+            final Map<String, String> aliases = new HashMap<>();
+            if (aliasesNode != null)
+                aliasesNode.fields().forEachRemaining(kv -> aliases.put(kv.getKey(), kv.getValue().asText()));
 
             final JsonNode languageNode = body.get(Tokens.ARGS_LANGUAGE);
             final String language = null == languageNode ? null : languageNode.asText();
 
-            return Quartet.with(scriptNode.asText(), bindings, language, rebindings);
+            return Quartet.with(scriptNode.asText(), bindings, language, aliases);
         }
     }
 
@@ -398,16 +441,38 @@ public class HttpGremlinEndpointHandler extends ChannelInboundHandlerAdapter {
             return node.asText();
     }
 
-    private static void sendError(final ChannelHandlerContext ctx, final HttpResponseStatus status, final String message) {
-        logger.warn("Invalid request - responding with {} and {}", status, message);
+
+    private static void sendError(final ChannelHandlerContext ctx, final HttpResponseStatus status,
+                                  final String message) {
+        sendError(ctx, status, message, Optional.empty());
+    }
+
+    private static void sendError(final ChannelHandlerContext ctx, final HttpResponseStatus status,
+                                  final String message, final Optional<Throwable> t) {
+        if (t.isPresent())
+            logger.warn(String.format("Invalid request - responding with %s and %s", status, message), t.get());
+        else
+            logger.warn(String.format("Invalid request - responding with %s and %s", status, message));
+
         errorMeter.mark();
         final ObjectNode node = mapper.createObjectNode();
         node.put("message", message);
+		if (t.isPresent()){
+			node.put("Exception-Class", t.get().getClass().getName());
+		}
+		
         final FullHttpResponse response = new DefaultFullHttpResponse(
                 HTTP_1_1, status, Unpooled.copiedBuffer(node.toString(), CharsetUtil.UTF_8));
         response.headers().set(CONTENT_TYPE, "application/json");
 
         // Close the connection as soon as the error message is sent.
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private static void attemptCommit(final Map<String, String> aliases, final GraphManager graphManager, final boolean strict) {
+        if (strict)
+            graphManager.commit(new HashSet<>(aliases.values()));
+        else
+            graphManager.commitAll();
     }
 }

@@ -76,7 +76,7 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
     @Deprecated
     @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
     public void g_VX1X_asXaX_outXcreatedX_addOutEXcreatedBy_aX() {
-        Traversal<Vertex, Edge> traversal = get_g_VX1X_asXaX_outXcreatedX_addOutEXcreatedBy_aX(convertToVertexId("marko"));
+        final Traversal<Vertex, Edge> traversal = get_g_VX1X_asXaX_outXcreatedX_addOutEXcreatedBy_aX(convertToVertexId("marko"));
         printTraversalForm(traversal);
         int count = 0;
         while (traversal.hasNext()) {
@@ -87,15 +87,15 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         }
         assertEquals(1, count);
-        assertEquals(7, IteratorUtils.count(graph.edges()));
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(7, IteratorUtils.count(g.E()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
     @LoadGraphWith(MODERN)
     @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
     public void g_VX1X_asXaX_outXcreatedX_addEXcreatedByX_toXaX() {
-        Traversal<Vertex, Edge> traversal = get_g_VX1X_asXaX_outXcreatedX_addEXcreatedByX_toXaX(convertToVertexId("marko"));
+        final Traversal<Vertex, Edge> traversal = get_g_VX1X_asXaX_outXcreatedX_addEXcreatedByX_toXaX(convertToVertexId("marko"));
         printTraversalForm(traversal);
         int count = 0;
         while (traversal.hasNext()) {
@@ -106,8 +106,8 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         }
         assertEquals(1, count);
-        assertEquals(7, IteratorUtils.count(graph.edges()));
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(7, IteratorUtils.count(g.E()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
@@ -115,42 +115,42 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
     @Deprecated
     @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
     public void g_VX1X_asXaX_outXcreatedX_addOutEXcreatedBy_a_weight_2X() {
-        Traversal<Vertex, Edge> traversal = get_g_VX1X_asXaX_outXcreatedX_addOutEXcreatedBy_a_weight_2X(convertToVertexId("marko"));
+        final Traversal<Vertex, Edge> traversal = get_g_VX1X_asXaX_outXcreatedX_addOutEXcreatedBy_a_weight_2X(convertToVertexId("marko"));
         printTraversalForm(traversal);
         int count = 0;
         while (traversal.hasNext()) {
             final Edge edge = traversal.next();
             assertEquals("createdBy", edge.label());
-            assertEquals(2, edge.<Integer>value("weight").intValue());
+            assertEquals(2.0d, edge.<Number>value("weight").doubleValue(), 0.00001d);
             assertEquals(1, IteratorUtils.count(edge.properties()));
             count++;
 
 
         }
         assertEquals(1, count);
-        assertEquals(7, IteratorUtils.count(graph.edges()));
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(7, IteratorUtils.count(g.E()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
     @LoadGraphWith(MODERN)
     @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
     public void g_VX1X_asXaX_outXcreatedX_addEXcreatedByX_toXaX_propertyXweight_2X() {
-        Traversal<Vertex, Edge> traversal = get_g_VX1X_asXaX_outXcreatedX_addEXcreatedByX_toXaX_propertyXweight_2X(convertToVertexId("marko"));
+        final Traversal<Vertex, Edge> traversal = get_g_VX1X_asXaX_outXcreatedX_addEXcreatedByX_toXaX_propertyXweight_2X(convertToVertexId("marko"));
         printTraversalForm(traversal);
         int count = 0;
         while (traversal.hasNext()) {
             final Edge edge = traversal.next();
             assertEquals("createdBy", edge.label());
-            assertEquals(2, edge.<Integer>value("weight").intValue());
+            assertEquals(2.0d, edge.<Number>value("weight").doubleValue(), 0.00001d);
             assertEquals(1, IteratorUtils.count(edge.properties()));
             count++;
 
 
         }
         assertEquals(1, count);
-        assertEquals(7, IteratorUtils.count(graph.edges()));
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(7, IteratorUtils.count(g.E()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
@@ -169,12 +169,12 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
             count++;
         }
         assertEquals(36, count);
-        assertEquals(42, IteratorUtils.count(graph.edges()));
-        for (final Vertex vertex : IteratorUtils.list(graph.vertices())) {
+        assertEquals(42, IteratorUtils.count(g.E()));
+        for (final Vertex vertex : IteratorUtils.list(g.V())) {
             assertEquals(6, IteratorUtils.count(vertex.edges(Direction.OUT, "existsWith")));
             assertEquals(6, IteratorUtils.count(vertex.edges(Direction.IN, "existsWith")));
         }
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
@@ -192,12 +192,12 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
             count++;
         }
         assertEquals(36, count);
-        assertEquals(42, IteratorUtils.count(graph.edges()));
-        for (final Vertex vertex : IteratorUtils.list(graph.vertices())) {
+        assertEquals(42, IteratorUtils.count(g.E()));
+        for (final Vertex vertex : IteratorUtils.list(g.V())) {
             assertEquals(6, IteratorUtils.count(vertex.edges(Direction.OUT, "existsWith")));
             assertEquals(6, IteratorUtils.count(vertex.edges(Direction.IN, "existsWith")));
         }
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
@@ -210,7 +210,7 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
         int count = 0;
         while (traversal.hasNext()) {
             final Edge edge = traversal.next();
-            assertEquals("co-developer", edge.label());
+            assertEquals("codeveloper", edge.label());
             assertEquals(2009, (int) edge.value("year"));
             assertEquals(1, IteratorUtils.count(edge.properties()));
             assertEquals("person", edge.inVertex().label());
@@ -222,8 +222,8 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         }
         assertEquals(6, count);
-        assertEquals(12, IteratorUtils.count(graph.edges()));
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(12, IteratorUtils.count(g.E()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
@@ -235,7 +235,7 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
         int count = 0;
         while (traversal.hasNext()) {
             final Edge edge = traversal.next();
-            assertEquals("co-developer", edge.label());
+            assertEquals("codeveloper", edge.label());
             assertEquals(2009, (int) edge.value("year"));
             assertEquals(1, IteratorUtils.count(edge.properties()));
             assertEquals("person", edge.inVertex().label());
@@ -247,8 +247,8 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         }
         assertEquals(6, count);
-        assertEquals(12, IteratorUtils.count(graph.edges()));
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(12, IteratorUtils.count(g.E()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
@@ -273,8 +273,8 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         }
         assertEquals(4, count);
-        assertEquals(10, IteratorUtils.count(graph.edges()));
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(10, IteratorUtils.count(g.E()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     @Test
@@ -298,8 +298,8 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         }
         assertEquals(4, count);
-        assertEquals(10, IteratorUtils.count(graph.edges()));
-        assertEquals(6, IteratorUtils.count(graph.vertices()));
+        assertEquals(10, IteratorUtils.count(g.E()));
+        assertEquals(6, IteratorUtils.count(g.V()));
     }
 
     public static class Traversals extends AddEdgeTest {
@@ -311,7 +311,7 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         @Override
         public Traversal<Vertex, Edge> get_g_VX1X_asXaX_outXcreatedX_addEXcreatedByX_toXaX_propertyXweight_2X(final Object v1Id) {
-            return g.V(v1Id).as("a").out("created").addE("createdBy").to("a").property("weight", 2);
+            return g.V(v1Id).as("a").out("created").addE("createdBy").to("a").property("weight", 2.0d);
         }
 
         @Override
@@ -321,7 +321,7 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         @Override
         public Traversal<Vertex, Edge> get_g_V_asXaX_outXcreatedX_inXcreatedX_whereXneqXaXX_asXbX_addEXcodeveloperX_fromXaX_toXbX_propertyXyear_2009X() {
-            return g.V().as("a").out("created").in("created").where(P.neq("a")).as("b").addE("co-developer").from("a").to("b").property("year", 2009);
+            return g.V().as("a").out("created").in("created").where(P.neq("a")).as("b").addE("codeveloper").from("a").to("b").property("year", 2009);
         }
 
         @Override
@@ -338,7 +338,7 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         @Override
         public Traversal<Vertex, Edge> get_g_VX1X_asXaX_outXcreatedX_addOutEXcreatedBy_a_weight_2X(final Object v1Id) {
-            return g.V(v1Id).as("a").out("created").addOutE("createdBy", "a", "weight", 2);
+            return g.V(v1Id).as("a").out("created").addOutE("createdBy", "a", "weight", 2.0d);
         }
 
         @Override
@@ -348,7 +348,7 @@ public abstract class AddEdgeTest extends AbstractGremlinProcessTest {
 
         @Override
         public Traversal<Vertex, Edge> get_g_V_asXaX_outXcreatedX_inXcreatedX_whereXneqXaXX_asXbX_selectXa_bX_addInEXa_codeveloper_b_year_2009X() {
-            return g.V().as("a").out("created").in("created").where(P.neq("a")).as("b").select("a", "b").addInE("a", "co-developer", "b", "year", 2009);
+            return g.V().as("a").out("created").in("created").where(P.neq("a")).as("b").select("a", "b").addInE("a", "codeveloper", "b", "year", 2009);
         }
 
         @Override

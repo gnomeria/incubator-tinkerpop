@@ -18,6 +18,8 @@
  */
 package org.apache.tinkerpop.gremlin.process.traversal;
 
+import java.util.Collection;
+import java.util.Map;
 import java.util.function.BinaryOperator;
 
 /**
@@ -25,106 +27,64 @@ import java.util.function.BinaryOperator;
  */
 public enum Operator implements BinaryOperator<Object> {
 
-
     sum {
         public Object apply(final Object a, Object b) {
-            final Class numberClass = a.getClass();
-            if (numberClass.equals(Integer.class)) {
-                return ((Number)a).intValue() + ((Number)b).intValue();
-            } else if (numberClass.equals(Long.class)) {
-                return ((Number)a).longValue() + ((Number)b).longValue();
-            } else if (numberClass.equals(Float.class)) {
-                return ((Number)a).floatValue() + ((Number)b).floatValue();
-            } else if (numberClass.equals(Double.class)) {
-                return ((Number)a).doubleValue() + ((Number)b).doubleValue();
-            } else {
-                throw new IllegalArgumentException("This operator only supports int, long, float, or double: " + numberClass);
-            }
+            return NumberHelper.add((Number) a, (Number) b);
         }
     },
     minus {
         public Object apply(final Object a, final Object b) {
-            final Class numberClass = a.getClass();
-            if (numberClass.equals(Integer.class)) {
-                return ((Number)a).intValue() - ((Number)b).intValue();
-            } else if (numberClass.equals(Long.class)) {
-                return ((Number)a).longValue() - ((Number)b).longValue();
-            } else if (numberClass.equals(Float.class)) {
-                return ((Number)a).floatValue() - ((Number)b).floatValue();
-            } else if (numberClass.equals(Double.class)) {
-                return ((Number)a).doubleValue() - ((Number)b).doubleValue();
-            } else {
-                throw new IllegalArgumentException("This operator only supports int, long, float, or double: " + numberClass);
-            }
+            return NumberHelper.sub((Number) a, (Number) b);
         }
     },
     mult {
         public Object apply(final Object a, final Object b) {
-            final Class numberClass = a.getClass();
-            if (numberClass.equals(Integer.class)) {
-                return ((Number)a).intValue() * ((Number)b).intValue();
-            } else if (numberClass.equals(Long.class)) {
-                return ((Number)a).longValue() * ((Number)b).longValue();
-            } else if (numberClass.equals(Float.class)) {
-                return ((Number)a).floatValue() * ((Number)b).floatValue();
-            } else if (numberClass.equals(Double.class)) {
-                return ((Number)a).doubleValue() * ((Number)b).doubleValue();
-            } else {
-                throw new IllegalArgumentException("This operator only supports int, long, float, or double: " + numberClass);
-            }
+            return NumberHelper.mul((Number) a, (Number) b);
         }
     },
     div {
         public Object apply(final Object a, final Object b) {
-            final Class numberClass = a.getClass();
-            if (numberClass.equals(Integer.class)) {
-                return ((Number)a).intValue() / ((Number)b).intValue();
-            } else if (numberClass.equals(Long.class)) {
-                return ((Number)a).longValue() / ((Number)b).longValue();
-            } else if (numberClass.equals(Float.class)) {
-                return ((Number)a).floatValue() / ((Number)b).floatValue();
-            } else if (numberClass.equals(Double.class)) {
-                return ((Number)a).doubleValue() / ((Number)b).doubleValue();
-            } else {
-                throw new IllegalArgumentException("This operator only supports int, long, float, or double: " + numberClass);
-            }
+            return NumberHelper.div((Number) a, (Number) b);
         }
     },
     min {
         public Object apply(final Object a, final Object b) {
-            final Class numberClass = a.getClass();
-            if (numberClass.equals(Integer.class)) {
-                return Math.min(((Number)a).intValue(), ((Number)b).intValue());
-            } else if (numberClass.equals(Long.class)) {
-                return Math.min(((Number)a).longValue(), ((Number)b).longValue());
-            } else if (numberClass.equals(Float.class)) {
-                return Math.min(((Number)a).floatValue(), ((Number)b).floatValue());
-            } else if (numberClass.equals(Double.class)) {
-                return Math.min(((Number)a).doubleValue(), ((Number)b).doubleValue());
-            } else {
-                throw new IllegalArgumentException("This operator only supports int, long, float, or double: " + numberClass);
-            }
+            return NumberHelper.min((Number) a, (Number) b);
         }
     },
     max {
         public Object apply(final Object a, final Object b) {
-            final Class numberClass = a.getClass();
-            if (numberClass.equals(Integer.class)) {
-                return Math.max(((Number)a).intValue(), ((Number)b).intValue());
-            } else if (numberClass.equals(Long.class)) {
-                return Math.max(((Number)a).longValue(), ((Number)b).longValue());
-            } else if (numberClass.equals(Float.class)) {
-                return Math.max(((Number)a).floatValue(), ((Number)b).floatValue());
-            } else if (numberClass.equals(Double.class)) {
-                return Math.max(((Number)a).doubleValue(), ((Number)b).doubleValue());
-            } else {
-                throw new IllegalArgumentException("This operator only supports int, long, float, or double: " + numberClass);
-            }
+            return NumberHelper.max((Number) a, (Number) b);
         }
     },
     assign {
         public Object apply(final Object a, final Object b) {
             return b;
+        }
+    },
+    and {
+        public Object apply(final Object a, final Object b) {
+            return ((boolean) a) && ((boolean) b);
+        }
+    },
+    or {
+        public Object apply(final Object a, final Object b) {
+            return ((boolean) a) || ((boolean) b);
+        }
+    },
+    addAll {
+        public Object apply(final Object a, final Object b) {
+            if (a instanceof Map)
+                ((Map) a).putAll((Map) b);
+            else
+                ((Collection) a).addAll((Collection) b);
+            return a;
+        }
+    },
+    //////
+    sumLong {
+        public Object apply(final Object a, final Object b) {
+            return (long) a + (long) b;
         }
     }
 }

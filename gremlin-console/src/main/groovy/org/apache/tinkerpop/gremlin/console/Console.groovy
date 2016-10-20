@@ -18,26 +18,32 @@
  */
 package org.apache.tinkerpop.gremlin.console
 
-import org.apache.tinkerpop.gremlin.console.commands.*
+import jline.TerminalFactory
+import jline.console.history.FileHistory
+
+import org.apache.commons.cli.Option
+import org.apache.tinkerpop.gremlin.console.commands.GremlinSetCommand
+import org.apache.tinkerpop.gremlin.console.commands.InstallCommand
+import org.apache.tinkerpop.gremlin.console.commands.PluginCommand
+import org.apache.tinkerpop.gremlin.console.commands.RemoteCommand
+import org.apache.tinkerpop.gremlin.console.commands.SubmitCommand
+import org.apache.tinkerpop.gremlin.console.commands.UninstallCommand
 import org.apache.tinkerpop.gremlin.console.plugin.PluggedIn
 import org.apache.tinkerpop.gremlin.groovy.loaders.GremlinLoader
 import org.apache.tinkerpop.gremlin.groovy.plugin.GremlinPlugin
-import jline.console.history.FileHistory
+import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalExplanation
+import org.apache.tinkerpop.gremlin.structure.Edge
+import org.apache.tinkerpop.gremlin.structure.T
+import org.apache.tinkerpop.gremlin.structure.Vertex
+import org.apache.tinkerpop.gremlin.util.Gremlin
 import org.apache.tinkerpop.gremlin.util.iterator.ArrayIterator
-import org.codehaus.groovy.tools.shell.AnsiDetector
 import org.codehaus.groovy.tools.shell.ExitNotification
 import org.codehaus.groovy.tools.shell.Groovysh
 import org.codehaus.groovy.tools.shell.IO
 import org.codehaus.groovy.tools.shell.InteractiveShellRunner
 import org.codehaus.groovy.tools.shell.commands.SetCommand
-import org.codehaus.groovy.tools.shell.util.Preferences
+import org.codehaus.groovy.tools.shell.util.HelpFormatter
 import org.fusesource.jansi.Ansi
-import org.fusesource.jansi.AnsiConsole
-
-import java.nio.charset.Charset
-import java.util.concurrent.TimeUnit
-import java.util.prefs.PreferenceChangeEvent
-import java.util.prefs.PreferenceChangeListener
 
 /**
  * @author Stephen Mallette (http://stephen.genoprime.com)
@@ -46,50 +52,47 @@ class Console {
     static {
         // this is necessary so that terminal doesn't lose focus to AWT
         System.setProperty("java.awt.headless", "true")
-        // must be called before IO(), since it modifies System.in
-        // Install the system adapters, replaces System.out and System.err
-        // Must be called before using IO(), because IO stores refs to System.out and System.err
-        AnsiConsole.systemInstall()
-        // Register jline ansi detector
-        Ansi.setDetector(new AnsiDetector())
-        Ansi.enabled = true
+        Colorizer.installAnsi()
     }
 
-    public static final String PREFERENCE_ITERATION_MAX = "max-iteration"
-    private static final int DEFAULT_ITERATION_MAX = 100
-    private static int maxIteration = DEFAULT_ITERATION_MAX
-
-    private static final String HISTORY_FILE = ".gremlin_groovy_history"
-    private static final String STANDARD_INPUT_PROMPT = "gremlin> "
-    private static final String STANDARD_RESULT_PROMPT = "==>"
     private static final String IMPORT_SPACE = "import "
     private static final String IMPORT_STATIC_SPACE = "import static "
-    private static final String NULL = "null"
     private static final String ELLIPSIS = "..."
 
     private Iterator tempIterator = Collections.emptyIterator()
 
-    private final IO io = new IO(System.in, System.out, System.err)
-    private final Groovysh groovy = new GremlinGroovysh()
+    private final IO io
+    private final Groovysh groovy
+    private final boolean interactive
 
+    /**
+     * @deprecated As of release 3.2.1.
+     */
+    @Deprecated
     public Console(final String initScriptFile) {
-        io.out.println()
-        io.out.println("         \\,,,/")
-        io.out.println("         (o o)")
-        io.out.println("-----oOOo-(3)-oOOo-----")
+        this(new IO(System.in, System.out, System.err), initScriptFile.size() != null ? [initScriptFile]: null, true)
+    }
 
-        maxIteration = Integer.parseInt(Preferences.get(PREFERENCE_ITERATION_MAX, Integer.toString(DEFAULT_ITERATION_MAX)))
-        Preferences.addChangeListener(new PreferenceChangeListener() {
-            @Override
-            void preferenceChange(PreferenceChangeEvent evt) {
-                if (evt.key == PREFERENCE_ITERATION_MAX)
-                    maxIteration = Integer.parseInt(evt.newValue)
-            }
-        })
+    public Console(final IO io, final List<String> scriptAndArgs, final boolean interactive) {
+        this.io = io
+        this.interactive = interactive
+
+        if (!io.quiet) {
+            io.out.println()
+            io.out.println("         " + Colorizer.render(Preferences.gremlinColor, "\\,,,/"))
+            io.out.println("         " + Colorizer.render(Preferences.gremlinColor, "(o o)"))
+            io.out.println("" + Colorizer.render(Preferences.gremlinColor, "-----oOOo-(3)-oOOo-----"))
+        }
 
         final Mediator mediator = new Mediator(this)
-        def commandsToRemove = groovy.getRegistry().commands().findAll{it instanceof SetCommand}
-        commandsToRemove.each {groovy.getRegistry().remove(it)}
+
+        // make sure that remotes are closed if console takes a ctrl-c
+        addShutdownHook { mediator.close() }
+
+        groovy = new GremlinGroovysh(mediator)
+
+        def commandsToRemove = groovy.getRegistry().commands().findAll { it instanceof SetCommand }
+        commandsToRemove.each { groovy.getRegistry().remove(it) }
         groovy.register(new GremlinSetCommand(groovy))
         groovy.register(new UninstallCommand(groovy, mediator))
         groovy.register(new InstallCommand(groovy, mediator))
@@ -109,11 +112,11 @@ class Console {
         final InteractiveShellRunner runner = new InteractiveShellRunner(groovy, handlePrompt)
         runner.setErrorHandler(handleError)
         try {
-            final FileHistory history = new FileHistory(new File(System.getProperty("user.home") + System.getProperty("file.separator") + HISTORY_FILE))
+            final FileHistory history = new FileHistory(new File(ConsoleFs.HISTORY_FILE))
             groovy.setHistory(history)
             runner.setHistory(history)
         } catch (IOException ignored) {
-            io.err.println("Unable to create history file: " + HISTORY_FILE)
+            io.err.println(Colorizer.render(Preferences.errorColor, "Unable to create history file: " + ConsoleFs.HISTORY_FILE))
         }
 
         GremlinLoader.load()
@@ -127,7 +130,9 @@ class Console {
 
                 if (activePlugins.contains(plugin.class.name)) {
                     pluggedIn.activate()
-                    io.out.println("plugin activated: " + plugin.getName())
+
+                    if (!io.quiet)
+                        io.out.println(Colorizer.render(Preferences.infoColor, "plugin activated: " + plugin.getName()))
                 }
             }
         }
@@ -136,24 +141,22 @@ class Console {
         // deactivated, and are thus hanging about
         mediator.writePluginState()
 
-        // start iterating results to show as output
-        showShellEvaluationOutput(true)
-        if (initScriptFile != null) initializeShellWithScript(initScriptFile)
-
         try {
+            // if the init script contains :x command it will throw an ExitNotification so init script execution
+            // needs to appear in the try/catch
+            if (scriptAndArgs != null && scriptAndArgs.size() > 0) executeInShell(scriptAndArgs)
+
+            // start iterating results to show as output
+            showShellEvaluationOutput(true)
+
             runner.run()
         } catch (ExitNotification ignored) {
             // occurs on exit
         } catch (Throwable t) {
             t.printStackTrace()
         } finally {
-            try {
-                mediator.close().get(3, TimeUnit.SECONDS)
-            } catch (Exception ignored) {
-                // ok if this times out - just trying to be polite on shutdown
-            } finally {
-                System.exit(0)
-            }
+            // shutdown hook defined above will kill any open remotes
+            System.exit(0)
         }
     }
 
@@ -164,7 +167,20 @@ class Console {
             groovy.setResultHook(handleResultShowNothing)
     }
 
-    private def handlePrompt = { STANDARD_INPUT_PROMPT }
+    private def handlePrompt = { 
+        if (interactive) {
+            int lineNo = groovy.buffers.current().size() 
+            if (lineNo > 0 ) {
+                String lineStr = lineNo.toString() + ">"
+                int pad = Preferences.inputPrompt.length()
+                return Colorizer.render(Preferences.inputPromptColor, lineStr.toString().padLeft(pad, '.') + ' ')
+            } else {
+                return Colorizer.render(Preferences.inputPromptColor, Preferences.inputPrompt + ' ')
+            }
+        } else {
+            return ""
+        }
+    }
 
     private def handleResultShowNothing = { args -> null }
 
@@ -179,13 +195,12 @@ class Console {
         while (true) {
             if (this.tempIterator.hasNext()) {
                 int counter = 0;
-                while (this.tempIterator.hasNext() && (maxIteration == -1 || counter < maxIteration)) {
-                    final Object object = this.tempIterator.next()
-                    io.out.println(buildResultPrompt() + ((null == object) ? NULL : object.toString()))
+                while (this.tempIterator.hasNext() && (Preferences.maxIteration == -1 || counter < Preferences.maxIteration)) {
+                    printResult(tempIterator.next())
                     counter++;
                 }
-                if(this.tempIterator.hasNext())
-                    io.out.println(ELLIPSIS);
+                if (this.tempIterator.hasNext())
+                    io.out.println(Colorizer.render(Preferences.resultPromptColor,ELLIPSIS));
                 this.tempIterator = Collections.emptyIterator();
                 return null
             } else {
@@ -224,8 +239,12 @@ class Console {
                             this.tempIterator = Collections.emptyIterator();
                             return null
                         }
+                    } else if (result instanceof TraversalExplanation) {
+                        final int width = TerminalFactory.get().getWidth();
+                        io.out.println(Colorizer.render(Preferences.resultPromptColor,(buildResultPrompt() + result.prettyPrint(width < 20 ? 80 : width))))
+                        return null
                     } else {
-                        io.out.println(buildResultPrompt() + ((null == result) ? NULL : result.toString()))
+                        printResult(result)
                         return null
                     }
                 } catch (final Exception e) {
@@ -233,6 +252,48 @@ class Console {
                     throw e
                 }
             }
+        }
+    }
+
+    def printResult(def object) {
+        final String prompt = Colorizer.render(Preferences.resultPromptColor, buildResultPrompt())
+        // if preference is set to empty string then don't print any result
+        if (object != null) {
+            io.out.println(prompt + colorizeResult(object))
+        } else {
+            if (!Preferences.emptyResult.isEmpty()) {
+                io.out.println(prompt + Preferences.emptyResult)
+            }
+        }
+    }
+
+    def colorizeResult = { object ->
+        if (object instanceof Vertex) {
+            return Colorizer.render(Preferences.vertexColor, object.toString())
+        } else if (object instanceof Edge) {
+            return Colorizer.render(Preferences.edgeColor, object.toString())
+        } else if (object instanceof Iterable) {
+            List<String> buf = new ArrayList<>();
+            def pathIter = object.iterator()
+            while (pathIter.hasNext()) {
+                Object n = pathIter.next()
+                buf.add(colorizeResult(n))
+            }
+            return ("[" + buf.join(",") + "]")
+        } else if (object instanceof Map) {
+            List<String> buf = new ArrayList<>();
+            object.each{k, v ->
+                buf.add(colorizeResult(k) + ":" + colorizeResult(v))
+            }
+            return ("[" + buf.join(",") + "]")
+        } else if (object instanceof String) {
+            return Colorizer.render(Preferences.stringColor, object)
+        } else if (object instanceof Number) {
+            return Colorizer.render(Preferences.numberColor, object)
+        } else if (object instanceof T) {
+            return Colorizer.render(Preferences.tColor, object)
+        } else {
+            return object.toString()
         }
     }
 
@@ -244,26 +305,34 @@ class Console {
                 String message = e.getMessage()
                 if (null != message) {
                     message = message.replace("startup failed:", "")
-                    io.err.println(message.trim())
+                    io.err.println(Colorizer.render(Preferences.errorColor, message.trim()))
                 } else {
-                    io.err.println(e)
+                    io.err.println(Colorizer.render(Preferences.errorColor,e))
                 }
 
-                io.err.print("Display stack trace? [yN] ")
-                io.err.flush()
-                String line = new BufferedReader(io.in).readLine()
-                if (null == line)
-                    line = ""
-                io.err.print(line.trim())
-                io.err.println()
-                if (line.trim().equals("y") || line.trim().equals("Y")) {
+                if (interactive) {
+                    io.err.println(Colorizer.render(Preferences.infoColor,"Type ':help' or ':h' for help."))
+                    io.err.print(Colorizer.render(Preferences.errorColor, "Display stack trace? [yN]"))
+                    io.err.flush()
+                    String line = new BufferedReader(io.in).readLine()
+                    if (null == line)
+                        line = ""
+                    io.err.print(line.trim())
+                    io.err.println()
+                    if (line.trim().equals("y") || line.trim().equals("Y")) {
+                        e.printStackTrace(io.err)
+                    }
+                } else {
                     e.printStackTrace(io.err)
+                    System.exit(1)
                 }
             } catch (Exception ignored) {
-                io.err.println("An undefined error has occurred: " + err)
+                io.err.println(Colorizer.render(Preferences.errorColor, "An undefined error has occurred: " + err))
+                if (!interactive) System.exit(1)
             }
         } else {
-            io.err.println("An undefined error has occurred: " + err.toString())
+            io.err.println(Colorizer.render(Preferences.errorColor, "An undefined error has occurred: " + err.toString()))
+            if (!interactive) System.exit(1)
         }
 
         return null
@@ -278,28 +347,111 @@ class Console {
         if (groovyshellEnv != null)
             return groovyshellEnv
 
-        return STANDARD_RESULT_PROMPT
+        return Preferences.resultPrompt
     }
 
-    private void initializeShellWithScript(final String initScriptFile) {
-        String line = ""
+    private void executeInShell(final List<String> scriptAndArgs) {
+        final String scriptFile = scriptAndArgs[0]
         try {
-            final BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    new FileInputStream(initScriptFile), Charset.forName("UTF-8")))
-            while ((line = reader.readLine()) != null) {
-                groovy.execute(line)
+            // check if this script comes with arguments. if so then set them up in an "args" bundle
+            if (scriptAndArgs.size() > 1) {
+                List<String> args = scriptAndArgs.subList(1, scriptAndArgs.size())
+                groovy.execute("args = [\"" + args.join('\",\"') + "\"]")
+            } else {
+                groovy.execute("args = []")
             }
-            reader.close()
+
+            final File file = new File(scriptFile)
+            int lineNumber = 0
+            def lines = file.readLines()
+            for (String line : lines) {
+                try {
+                    lineNumber++
+                    groovy.execute(line)
+                } catch (Exception ex) {
+                    io.err.println(Colorizer.render(Preferences.errorColor, "Error in $scriptFile at [$lineNumber: $line] - ${ex.message}"))
+                    if (interactive)
+                        break
+                    else {
+                        ex.printStackTrace(io.err)
+                        System.exit(1)
+                    }
+
+                }
+            }
+
+            if (!interactive) System.exit(0)
         } catch (FileNotFoundException ignored) {
-            io.err.println(String.format("Gremlin initialization file not found at [%s].", initScriptFile))
-            System.exit(1)
-        } catch (IOException ignored) {
-            io.err.println(String.format("Bad line in Gremlin initialization file at [%s].", line))
-            System.exit(1)
+            io.err.println(Colorizer.render(Preferences.errorColor, "Gremlin file not found at [$scriptFile]."))
+            if (!interactive) System.exit(1)
+        } catch (Exception ex) {
+            io.err.println(Colorizer.render(Preferences.errorColor, "Failure processing Gremlin script [$scriptFile] - ${ex.message}"))
+            if (!interactive) System.exit(1)
         }
     }
 
     public static void main(final String[] args) {
-        new Console(args.length == 1 ? args[0] : null)
+
+        Preferences.expandoMagic()
+
+        // need to do some up front processing to try to support "bin/gremlin.sh init.groovy" until this deprecated
+        // feature can be removed. ultimately this should be removed when a breaking change can go in
+        IO io = new IO(System.in, System.out, System.err)
+        if (args.length == 1 && !args[0].startsWith("-"))
+            new Console(io, [args[0]], true)
+
+        final CliBuilder cli = new CliBuilder(usage: 'gremlin.sh [options] [...]', formatter: new HelpFormatter(), stopAtNonOption: false)
+
+        // note that the inclusion of -l is really a setting handled by gremlin.sh and not by Console class itself.
+        // it is mainly listed here for informational purposes when the user starts things up with -h
+        cli.with {
+            h(longOpt: 'help', "Display this help message")
+            v(longOpt: 'version', "Display the version")
+            l("Set the logging level of components that use standard logging output independent of the Console")
+            V(longOpt: 'verbose', "Enable verbose Console output")
+            Q(longOpt: 'quiet', "Suppress superfluous Console output")
+            D(longOpt: 'debug', "Enabled debug Console output")
+            i(longOpt: 'interactive', argName: "SCRIPT ARG1 ARG2 ...", args: Option.UNLIMITED_VALUES, valueSeparator: ' ' as char, "Execute the specified script and leave the console open on completion")
+            e(longOpt: 'execute', argName: "SCRIPT ARG1 ARG2 ...", args: Option.UNLIMITED_VALUES, valueSeparator: ' ' as char, "Execute the specified script (SCRIPT ARG1 ARG2 ...) and close the console on completion")
+            C(longOpt: 'color', "Disable use of ANSI colors")
+        }
+        OptionAccessor options = cli.parse(args)
+
+        if (options == null) {
+            // CliBuilder prints error, but does not exit
+            System.exit(22) // Invalid Args
+        }
+
+        if (options.C) {
+            Ansi.enabled = false
+        }
+
+        if (options.h) {
+            cli.usage()
+            System.exit(0)
+        }
+
+        if (options.v) {
+            println("gremlin " + Gremlin.version())
+            System.exit(0)
+        }
+
+        if (options.V) io.verbosity = IO.Verbosity.VERBOSE
+        if (options.D) io.verbosity = IO.Verbosity.DEBUG
+        if (options.Q) io.verbosity = IO.Verbosity.QUIET
+
+        // override verbosity if not explicitly set and -e is used
+        if (options.e && (!options.V && !options.D && !options.Q))
+            io.verbosity = IO.Verbosity.QUIET
+
+        if (options.i && options.e) {
+            println("-i and -e options are mutually exclusive - provide one or the other")
+            System.exit(0)
+        }
+
+        List<String> scriptAndArgs = options.e ?
+                (options.es != null && options.es ? options.es : null) :
+                (options.is != null && options.is ? options.is : null)
+        new Console(io, scriptAndArgs, !options.e)
     }
 }

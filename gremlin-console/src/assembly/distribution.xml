@@ -22,7 +22,7 @@ limitations under the License.
     <fileSets>
         <fileSet>
             <fileMode>0775</fileMode>
-            <directory>target/apache-${project.artifactId}-${project.version}-standalone/bin</directory>
+            <directory>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone/bin</directory>
             <outputDirectory>bin</outputDirectory>
             <includes>
                 <include>*.sh</include>
@@ -30,41 +30,50 @@ limitations under the License.
             </includes>
         </fileSet>
         <fileSet>
-            <directory>target/apache-${project.artifactId}-${project.version}-standalone/conf</directory>
+            <fileMode>0775</fileMode>
+            <directory>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone/bin/hadoop</directory>
+            <outputDirectory>bin/hadoop</outputDirectory>
+            <includes>
+                <include>*.sh</include>
+                <include>*.bat</include>
+            </includes>
+        </fileSet>
+        <fileSet>
+            <directory>src/main/static/licenses</directory>
+            <outputDirectory>licenses</outputDirectory>
+        </fileSet>
+        <fileSet>
+            <directory>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone/conf</directory>
             <outputDirectory>conf</outputDirectory>
         </fileSet>
         <fileSet>
-            <directory>target/apache-${project.artifactId}-${project.version}-standalone/data</directory>
+            <directory>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone/data</directory>
             <outputDirectory>data</outputDirectory>
         </fileSet>
         <fileSet>
-            <directory>target/apache-${project.artifactId}-${project.version}-standalone/docs</directory>
+            <directory>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone/docs</directory>
             <outputDirectory>docs</outputDirectory>
         </fileSet>
         <fileSet>
-            <directory>target/apache-${project.artifactId}-${project.version}-standalone/javadocs</directory>
+            <directory>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone/javadocs</directory>
             <outputDirectory>javadocs</outputDirectory>
         </fileSet>
         <fileSet>
-            <directory>target/apache-${project.artifactId}-${project.version}-standalone/ext</directory>
+            <directory>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone/ext</directory>
             <outputDirectory>ext</outputDirectory>
         </fileSet>
         <fileSet>
-            <directory>target/apache-${project.artifactId}-${project.version}-standalone/lib</directory>
+            <directory>target/apache-tinkerpop-${project.artifactId}-${project.version}-standalone/lib</directory>
             <outputDirectory>lib</outputDirectory>
         </fileSet>
     </fileSets>
     <files>
         <file>
-            <source>src/main/LICENSE</source>
+            <source>src/main/static/LICENSE</source>
             <outputDirectory></outputDirectory>
         </file>
         <file>
-            <source>src/main/NOTICE</source>
-            <outputDirectory></outputDirectory>
-        </file>
-        <file>
-            <source>../DISCLAIMER</source>
+            <source>src/main/static/NOTICE</source>
             <outputDirectory></outputDirectory>
         </file>
     </files>

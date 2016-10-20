@@ -22,12 +22,13 @@ import org.apache.tinkerpop.gremlin.process.traversal.Pop;
 import org.apache.tinkerpop.gremlin.process.traversal.Step;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
+import org.apache.tinkerpop.gremlin.process.traversal.step.PathProcessor;
 import org.apache.tinkerpop.gremlin.process.traversal.step.Scoping;
 import org.apache.tinkerpop.gremlin.process.traversal.step.TraversalParent;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.MapStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.ProfileStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.StartStep;
-import org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.ConjunctionStrategy;
+import org.apache.tinkerpop.gremlin.process.traversal.step.util.ProfileStep;
+import org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.ConnectiveStrategy;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.TraverserRequirement;
 import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalHelper;
 import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalUtil;
@@ -41,10 +42,11 @@ import java.util.Set;
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  */
-public final class WhereTraversalStep<S> extends FilterStep<S> implements TraversalParent, Scoping {
+public final class WhereTraversalStep<S> extends FilterStep<S> implements TraversalParent, Scoping, PathProcessor {
 
     protected Traversal.Admin<?, ?> whereTraversal;
     protected final Set<String> scopeKeys = new HashSet<>();
+    protected Set<String> keepLabels;
 
     public WhereTraversalStep(final Traversal.Admin traversal, final Traversal<?, ?> whereTraversal) {
         super(traversal);
@@ -56,10 +58,10 @@ public final class WhereTraversalStep<S> extends FilterStep<S> implements Traver
     }
 
     private void configureStartAndEndSteps(final Traversal.Admin<?, ?> whereTraversal) {
-        ConjunctionStrategy.instance().apply(whereTraversal);
+        ConnectiveStrategy.instance().apply(whereTraversal);
         //// START STEP to WhereStartStep
         final Step<?, ?> startStep = whereTraversal.getStartStep();
-        if (startStep instanceof ConjunctionStep || startStep instanceof NotStep) {       // for conjunction- and not-steps
+        if (startStep instanceof ConnectiveStep || startStep instanceof NotStep) {       // for conjunction- and not-steps
             ((TraversalParent) startStep).getLocalChildren().forEach(this::configureStartAndEndSteps);
         } else if (StartStep.isVariableStartStep(startStep)) {  // as("a").out()... traversals
             final String label = startStep.getLabels().iterator().next();
@@ -80,6 +82,17 @@ public final class WhereTraversalStep<S> extends FilterStep<S> implements Traver
         }
     }
 
+    @Override
+    public ElementRequirement getMaxRequirement() {
+        return TraversalHelper.getVariableLocations(this.whereTraversal).contains(Scoping.Variable.START) ?
+                PathProcessor.super.getMaxRequirement() :
+                ElementRequirement.ID;
+    }
+
+    @Override
+    protected Traverser.Admin<S> processNextStart() {
+        return PathProcessor.processTraverserPathLabels(super.processNextStart(), this.keepLabels);
+    }
 
     @Override
     protected boolean filter(final Traverser.Admin<S> traverser) {
@@ -104,8 +117,14 @@ public final class WhereTraversalStep<S> extends FilterStep<S> implements Traver
     @Override
     public WhereTraversalStep<S> clone() {
         final WhereTraversalStep<S> clone = (WhereTraversalStep<S>) super.clone();
-        clone.whereTraversal = clone.integrateChild(this.whereTraversal.clone());
+        clone.whereTraversal = this.whereTraversal.clone();
         return clone;
+    }
+
+    @Override
+    public void setTraversal(final Traversal.Admin<?, ?> parentTraversal) {
+        super.setTraversal(parentTraversal);
+        integrateChild(this.whereTraversal);
     }
 
     @Override
@@ -115,9 +134,19 @@ public final class WhereTraversalStep<S> extends FilterStep<S> implements Traver
 
     @Override
     public Set<TraverserRequirement> getRequirements() {
-        return TraversalHelper.getLabels(TraversalHelper.getRootTraversal(this.traversal)).stream().filter(this.scopeKeys::contains).findAny().isPresent() ?
+        return TraversalHelper.getLabels(TraversalHelper.getRootTraversal(this.getTraversal())).stream().filter(this.scopeKeys::contains).findAny().isPresent() ?
                 TYPICAL_GLOBAL_REQUIREMENTS :
                 TYPICAL_LOCAL_REQUIREMENTS;
+    }
+
+    @Override
+    public void setKeepLabels(final Set<String> keepLabels) {
+        this.keepLabels = keepLabels;
+    }
+
+    @Override
+    public Set<String> getKeepLabels() {
+        return this.keepLabels;
     }
 
     //////////////////////////////

@@ -34,11 +34,13 @@ import org.junit.runners.MethodSorters
 
 /**
  * @author Stephen Mallette (http://stephen.genoprime.com)
+ * @deprecated As of release 3.2.1, replaced by gremlin-benchmark.
  */
 @AxisRange(min = 0d, max = 1d)
 @BenchmarkMethodChart(filePrefix = "sugar")
 @BenchmarkHistoryChart(labelWith = LabelType.CUSTOM_KEY, maxRuns = 20, filePrefix = "hx-sugar")
 @FixMethodOrder(MethodSorters.JVM)
+@Deprecated
 class SugarLoaderPerformanceTest extends AbstractGremlinTest {
     @Rule
     public TestRule benchmarkRun = new BenchmarkRule()
@@ -110,27 +112,27 @@ class SugarLoaderPerformanceTest extends AbstractGremlinTest {
     @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
     @Test
     public void java_g_VX1X_name() throws Exception {
-        g.V(1).values("name").iterate()
+        g.V(convertToVertexId("marko")).values("name").iterate()
     }
 
     @BenchmarkOptions(benchmarkRounds = SugarLoaderPerformanceTest.DEFAULT_BENCHMARK_ROUNDS, warmupRounds = SugarLoaderPerformanceTest.DEFAULT_WARMUP_ROUNDS, concurrency = BenchmarkOptions.CONCURRENCY_SEQUENTIAL)
     @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
     @Test
     public void groovy_g_VX1X_name() throws Exception {
-        g.V(1).name.iterate()
+        g.V(convertToVertexId("marko")).name.iterate()
     }
 
     @BenchmarkOptions(benchmarkRounds = SugarLoaderPerformanceTest.DEFAULT_BENCHMARK_ROUNDS, warmupRounds = SugarLoaderPerformanceTest.DEFAULT_WARMUP_ROUNDS, concurrency = BenchmarkOptions.CONCURRENCY_SEQUENTIAL)
     @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
     @Test
     public void java_g_VX1X_outE() throws Exception {
-        g.V(1).outE().iterate()
+        g.V(convertToVertexId("marko")).outE().iterate()
     }
 
     @BenchmarkOptions(benchmarkRounds = SugarLoaderPerformanceTest.DEFAULT_BENCHMARK_ROUNDS, warmupRounds = SugarLoaderPerformanceTest.DEFAULT_WARMUP_ROUNDS, concurrency = BenchmarkOptions.CONCURRENCY_SEQUENTIAL)
     @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
     @Test
     public void groovy_g_VX1X_outE() throws Exception {
-        g.V(1).outE.iterate()
+        g.V(convertToVertexId("marko")).outE.iterate()
     }
 }

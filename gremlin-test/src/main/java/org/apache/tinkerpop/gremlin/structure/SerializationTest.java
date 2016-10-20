@@ -18,8 +18,6 @@
  */
 package org.apache.tinkerpop.gremlin.structure;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.tinkerpop.gremlin.AbstractGremlinTest;
 import org.apache.tinkerpop.gremlin.LoadGraphWith;
 import org.apache.tinkerpop.gremlin.process.traversal.Path;
@@ -35,6 +33,8 @@ import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedProperty;
 import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedVertex;
 import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedVertexProperty;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
+import org.apache.tinkerpop.shaded.jackson.core.type.TypeReference;
+import org.apache.tinkerpop.shaded.jackson.databind.ObjectMapper;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
@@ -46,6 +46,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.apache.tinkerpop.gremlin.process.traversal.step.util.Tree;
+import static org.hamcrest.CoreMatchers.instanceOf;
 
 import static org.junit.Assert.*;
 
@@ -211,7 +213,7 @@ public class SerializationTest {
             final GryoWriter gryoWriter = gryoIo.writer().create();
             final GryoReader gryoReader = gryoIo.reader().create();
 
-            final TraversalMetrics before = (TraversalMetrics) g.V().both().profile().cap(TraversalMetrics.METRICS_KEY).next();
+            final TraversalMetrics before = (TraversalMetrics) g.V().both().profile().next();
             final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
             gryoWriter.writeObject(outputStream, before);
 
@@ -222,8 +224,28 @@ public class SerializationTest {
             assertEquals(before.getDuration(TimeUnit.MILLISECONDS), after.getDuration(TimeUnit.MILLISECONDS));
             assertEquals(before.getMetrics(0).getCounts(), after.getMetrics(0).getCounts());
         }
-    }
+        
+        @Test
+        @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
+        public void shouldSerializeTree() throws Exception {
+            final GryoIo gryoIo = graph.io(GryoIo.build());
+            final GryoWriter gryoWriter = gryoIo.writer().create();
+            final GryoReader gryoReader = gryoIo.reader().create();
 
+            final Tree before = g.V(convertToVertexId("marko")).out().properties("name").tree().next();
+            
+            final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            gryoWriter.writeObject(outputStream, before);
+
+            final ByteArrayInputStream inputStream = new ByteArrayInputStream(outputStream.toByteArray());
+            final Tree after = gryoReader.readObject(inputStream, Tree.class);
+            assertNotNull(after);
+            //The following assertions should be sufficent.
+            assertThat("Type does not match", after, instanceOf(Tree.class));
+            assertEquals("The objects differ", after, before);
+        }
+    }
+    
     public static class GraphSONTest extends AbstractGremlinTest {
         private final TypeReference<HashMap<String, Object>> mapTypeReference = new TypeReference<HashMap<String, Object>>() {
         };
@@ -333,7 +355,7 @@ public class SerializationTest {
         @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
         public void shouldSerializeTraversalMetrics() throws Exception {
             final ObjectMapper mapper = graph.io(GraphSONIo.build()).mapper().create().createMapper();
-            final TraversalMetrics tm = (TraversalMetrics) g.V().both().profile().cap(TraversalMetrics.METRICS_KEY).next();
+            final TraversalMetrics tm = (TraversalMetrics) g.V().both().profile().next();
             final String json = mapper.writeValueAsString(tm);
             final Map<String, Object> m = mapper.readValue(json, mapTypeReference);
 
@@ -341,13 +363,67 @@ public class SerializationTest {
             assertTrue(m.containsKey(GraphSONTokens.METRICS));
 
             final List<Map<String, Object>> metrics = (List<Map<String, Object>>) m.get(GraphSONTokens.METRICS);
-            assertEquals(3, metrics.size());
+            assertEquals(2, metrics.size());
 
             final Map<String, Object> metrics0 = metrics.get(0);
             assertTrue(metrics0.containsKey(GraphSONTokens.ID));
             assertTrue(metrics0.containsKey(GraphSONTokens.NAME));
             assertTrue(metrics0.containsKey(GraphSONTokens.COUNTS));
             assertTrue(metrics0.containsKey(GraphSONTokens.DURATION));
+        }
+        
+        @Test
+        @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
+        public void shouldSerializeTree() throws Exception {
+            final ObjectMapper mapper = graph.io(GraphSONIo.build()).mapper().create().createMapper();
+            final Tree t = g.V(convertToVertexId("marko")).out().properties("name").tree().next();
+            final String json = mapper.writeValueAsString(t);
+            
+            final HashMap<String, Object> m = (HashMap<String, Object>) mapper.readValue(json, mapTypeReference);
+            
+            // Check Structure
+            assertEquals(1, m.size());
+            assertTrue(m.containsKey(convertToVertexId("marko").toString()));
+            
+            // Check Structure n+1
+            final HashMap<String, Object> branch = (HashMap<String, Object>) m.get(convertToVertexId("marko").toString());
+            assertEquals(2, branch.size());
+            assertTrue(branch.containsKey(GraphSONTokens.KEY));
+            assertTrue(branch.containsKey(GraphSONTokens.VALUE));
+            
+            //Check n+1 key (traversed element)
+            final HashMap<String, Object> branchKey = (HashMap<String, Object>) branch.get(GraphSONTokens.KEY);
+            assertTrue(branchKey.containsKey(GraphSONTokens.ID));
+            assertTrue(branchKey.containsKey(GraphSONTokens.LABEL));
+            assertTrue(branchKey.containsKey(GraphSONTokens.TYPE));
+            assertTrue(branchKey.containsKey(GraphSONTokens.PROPERTIES));
+            assertEquals(convertToVertexId("marko").toString(), branchKey.get(GraphSONTokens.ID).toString());
+            assertEquals("person", branchKey.get(GraphSONTokens.LABEL));
+            assertEquals("vertex", branchKey.get(GraphSONTokens.TYPE));
+            final HashMap<String, List<HashMap<String, Object>>> branchKeyProps = (HashMap<String, List<HashMap<String, Object>>>) branchKey.get(GraphSONTokens.PROPERTIES);
+            assertEquals("marko", branchKeyProps.get("name").get(0).get("value"));
+            assertEquals(29, branchKeyProps.get("age").get(0).get("value"));
+            
+            //Check n+1 value (traversed element)
+            final HashMap<String, Object> branchValue = (HashMap<String, Object>) branch.get(GraphSONTokens.VALUE);
+            assertEquals(3, branchValue.size());
+            assertTrue(branchValue.containsKey(convertToVertexId("vadas").toString()));
+            assertTrue(branchValue.containsKey(convertToVertexId("lop").toString()));
+            assertTrue(branchValue.containsKey(convertToVertexId("josh").toString()));
+            
+            // Check that vp[] functioned properly
+            final HashMap<String, HashMap<String, Object>> branch2 = (HashMap<String, HashMap<String, Object>>) branchValue.get(convertToVertexId("vadas").toString());
+            assertTrue(branch2.containsKey(GraphSONTokens.KEY));
+            assertTrue(branch2.containsKey(GraphSONTokens.VALUE));
+            
+            final Map.Entry entry = branch2.get(GraphSONTokens.VALUE).entrySet().iterator().next();
+            final HashMap<String, HashMap<String, Object>> branch2Prop = (HashMap<String, HashMap<String, Object>>) entry.getValue();
+            assertTrue(branch2Prop.get(GraphSONTokens.KEY).containsKey(GraphSONTokens.ID));
+            assertTrue(branch2Prop.get(GraphSONTokens.KEY).containsKey(GraphSONTokens.VALUE));
+            assertTrue(branch2Prop.get(GraphSONTokens.KEY).containsKey(GraphSONTokens.LABEL));
+            assertEquals("name", branch2Prop.get(GraphSONTokens.KEY).get(GraphSONTokens.LABEL));
+            assertEquals("vadas", branch2Prop.get(GraphSONTokens.KEY).get(GraphSONTokens.VALUE));
+            assertEquals(entry.getKey().toString(), branch2Prop.get(GraphSONTokens.KEY).get(GraphSONTokens.ID).toString());
         }
     }
 }

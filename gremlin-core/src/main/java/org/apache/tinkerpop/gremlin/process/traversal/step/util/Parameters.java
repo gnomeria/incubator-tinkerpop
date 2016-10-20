@@ -16,12 +16,16 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+
 package org.apache.tinkerpop.gremlin.process.traversal.step.util;
 
+import org.apache.commons.lang.ArrayUtils;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 import org.apache.tinkerpop.gremlin.process.traversal.step.TraversalParent;
 import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalUtil;
+import org.apache.tinkerpop.gremlin.structure.Element;
+import org.apache.tinkerpop.gremlin.structure.T;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -31,10 +35,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 /**
+ * The parameters held by a {@link Traversal}.
+ *
  * @author Marko A. Rodriguez (http://markorodriguez.com)
+ * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public final class Parameters implements Cloneable, Serializable {
 
@@ -42,12 +48,24 @@ public final class Parameters implements Cloneable, Serializable {
 
     private Map<Object, List<Object>> parameters = new HashMap<>();
 
+    /**
+     * Checks for existence of key in parameter set.
+     *
+     * @param key the key to check
+     * @return {@code true} if the key is present and {@code false} otherwise
+     */
     public boolean contains(final Object key) {
         return this.parameters.containsKey(key);
     }
 
-    public void replace(final Object oldKey, final Object newKey) {
-        this.set(newKey, this.parameters.remove(oldKey));
+    /**
+     * Renames a key in the parameter set.
+     *
+     * @param oldKey the key to rename
+     * @param newKey the new name of the key
+     */
+    public void rename(final Object oldKey, final Object newKey) {
+        this.parameters.put(newKey, this.parameters.remove(oldKey));
     }
 
     public <S, E> List<E> get(final Traverser.Admin<S> traverser, final Object key, final Supplier<E> defaultValue) {
@@ -60,18 +78,33 @@ public final class Parameters implements Cloneable, Serializable {
         return result;
     }
 
+    /**
+     * Gets the value of a key and if that key isn't present returns the default value from the {@link Supplier}.
+     *
+     * @param key          the key to retrieve
+     * @param defaultValue the default value generator
+     */
     public <E> List<E> get(final Object key, final Supplier<E> defaultValue) {
         final List<E> list = (List<E>) this.parameters.get(key);
         return (null == list) ? Collections.singletonList(defaultValue.get()) : list;
 
     }
 
+    /**
+     * Remove a key from the parameter set.
+     *
+     * @param key the key to remove
+     * @return the value of the removed key
+     */
+    public Object remove(final Object key) {
+        return parameters.remove(key);
+    }
+
     public <S> Object[] getKeyValues(final Traverser.Admin<S> traverser, final Object... exceptKeys) {
         if (this.parameters.size() == 0) return EMPTY_ARRAY;
-        final List<Object> exceptions = Arrays.asList(exceptKeys);
         final List<Object> keyValues = new ArrayList<>();
         for (final Map.Entry<Object, List<Object>> entry : this.parameters.entrySet()) {
-            if (!exceptions.contains(entry.getKey())) {
+            if (!ArrayUtils.contains(exceptKeys, entry.getKey())) {
                 for (final Object value : entry.getValue()) {
                     keyValues.add(entry.getKey() instanceof Traversal.Admin ? TraversalUtil.apply(traverser, (Traversal.Admin<S, ?>) entry.getKey()) : entry.getKey());
                     keyValues.add(value instanceof Traversal.Admin ? TraversalUtil.apply(traverser, (Traversal.Admin<S, ?>) value) : value);
@@ -81,7 +114,28 @@ public final class Parameters implements Cloneable, Serializable {
         return keyValues.toArray(new Object[keyValues.size()]);
     }
 
+    /**
+     * Gets an immutable set of the parameters without evaluating them in the context of a {@link Traverser} as
+     * is done in {@link #getKeyValues(Traverser.Admin, Object...)}.
+     *
+     * @param exceptKeys keys to not include in the returned {@link Map}
+     */
+    public Map<Object, List<Object>> getRaw(final Object... exceptKeys) {
+        if (parameters.isEmpty()) return Collections.emptyMap();
+        final List<Object> exceptions = Arrays.asList(exceptKeys);
+        final Map<Object, List<Object>> raw = new HashMap<>();
+        for (Map.Entry<Object, List<Object>> entry : parameters.entrySet()) {
+            if (!exceptions.contains(entry.getKey())) raw.put(entry.getKey(), entry.getValue());
+        }
+
+        return Collections.unmodifiableMap(raw);
+    }
+
+    /**
+     * Set parameters given key/value pairs.
+     */
     public void set(final Object... keyValues) {
+        Parameters.legalPropertyKeyValueArray(keyValues);
         for (int i = 0; i < keyValues.length; i = i + 2) {
             if (keyValues[i + 1] != null) {
                 List<Object> values = this.parameters.get(keyValues[i]);
@@ -107,7 +161,15 @@ public final class Parameters implements Cloneable, Serializable {
     }
 
     public <S, E> List<Traversal.Admin<S, E>> getTraversals() {
-        return (List) this.parameters.values().stream().flatMap(List::stream).filter(t -> t instanceof Traversal.Admin).collect(Collectors.toList());
+        List<Traversal.Admin<S, E>> result = new ArrayList<>();
+        for (final List<Object> list : this.parameters.values()) {
+            for (final Object object : list) {
+                if (object instanceof Traversal.Admin) {
+                    result.add((Traversal.Admin) object);
+                }
+            }
+        }
+        return result;
     }
 
     public Parameters clone() {
@@ -140,5 +202,14 @@ public final class Parameters implements Cloneable, Serializable {
 
     public String toString() {
         return this.parameters.toString();
+    }
+
+    private static void legalPropertyKeyValueArray(final Object... propertyKeyValues) throws IllegalArgumentException {
+        if (propertyKeyValues.length % 2 != 0)
+            throw Element.Exceptions.providedKeyValuesMustBeAMultipleOfTwo();
+        for (int i = 0; i < propertyKeyValues.length; i = i + 2) {
+            if (!(propertyKeyValues[i] instanceof String) && !(propertyKeyValues[i] instanceof T) && !(propertyKeyValues[i] instanceof Traversal))
+                throw new IllegalArgumentException("The provided key/value array must have a String, T, or Traversal on even array indices");
+        }
     }
 }

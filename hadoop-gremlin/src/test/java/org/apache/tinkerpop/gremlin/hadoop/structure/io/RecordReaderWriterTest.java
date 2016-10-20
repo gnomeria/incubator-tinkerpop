@@ -22,8 +22,15 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.NullWritable;
-import org.apache.hadoop.mapreduce.*;
+import org.apache.hadoop.mapreduce.InputFormat;
+import org.apache.hadoop.mapreduce.OutputFormat;
+import org.apache.hadoop.mapreduce.RecordReader;
+import org.apache.hadoop.mapreduce.RecordWriter;
+import org.apache.hadoop.mapreduce.TaskAttemptContext;
+import org.apache.hadoop.mapreduce.TaskAttemptID;
+import org.apache.hadoop.mapreduce.TaskType;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
+import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.tinkerpop.gremlin.TestHelper;
 import org.apache.tinkerpop.gremlin.hadoop.HadoopGraphProvider;
@@ -31,6 +38,8 @@ import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.net.URL;
@@ -44,8 +53,10 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * @author Daniel Kuppitz (http://gremlin.guru)
+ * @author Marko A. Rodriguez (http://markorodriguez.com)
  */
 public abstract class RecordReaderWriterTest {
+    private static final Logger logger = LoggerFactory.getLogger(RecordReaderWriterTest.class);
 
     protected abstract String getInputFilename();
 
@@ -57,7 +68,7 @@ public abstract class RecordReaderWriterTest {
     public void shouldSplitFileAndWriteProperSplits() throws Exception {
         for (int numberOfSplits = 1; numberOfSplits < 10; numberOfSplits++) {
             final File testFile = new File(HadoopGraphProvider.PATHS.get(getInputFilename()));
-            System.out.println("Testing: " + testFile + " (splits " + numberOfSplits + ")");
+            logger.info("Testing: {}", testFile + " (splits {}", numberOfSplits + ")");
             final List<FileSplit> splits = generateFileSplits(testFile, numberOfSplits);
             final Class<? extends InputFormat<NullWritable, VertexWritable>> inputFormatClass = getInputFormat();
             final Class<? extends OutputFormat<NullWritable, VertexWritable>> outputFormatClass = getOutputFormat();
@@ -70,8 +81,8 @@ public abstract class RecordReaderWriterTest {
     protected Configuration configure(final File outputDirectory) {
         final Configuration configuration = new Configuration(false);
         configuration.set("fs.file.impl", LocalFileSystem.class.getName());
-        configuration.set("fs.default.name", "file:///");
-        configuration.set("mapred.output.dir", "file:///" + outputDirectory.getAbsolutePath());
+        configuration.set("fs.defaultFS", "file:///");
+        configuration.set("mapreduce.output.fileoutputformat.outputdir", "file:///" + outputDirectory.getAbsolutePath());
         return configuration;
     }
 
@@ -90,7 +101,7 @@ public abstract class RecordReaderWriterTest {
                                            final Optional<Class<? extends OutputFormat<NullWritable, VertexWritable>>> outFormatClass) throws Exception {
 
         final InputFormat inputFormat = ReflectionUtils.newInstance(inputFormatClass, configuration);
-        final TaskAttemptContext job = new TaskAttemptContext(configuration, new TaskAttemptID(UUID.randomUUID().toString(), 0, true, 0, 0));
+        final TaskAttemptContext job = new TaskAttemptContextImpl(configuration, new TaskAttemptID(UUID.randomUUID().toString(), 0, TaskType.MAP, 0, 0));
 
         int vertexCount = 0;
         int outEdgeCount = 0;
@@ -101,7 +112,7 @@ public abstract class RecordReaderWriterTest {
 
         boolean foundKeyValue = false;
         for (final FileSplit split : fileSplits) {
-            System.out.println("\treading file split " + split.getPath().getName() + " (" + split.getStart() + "..." + (split.getStart() + split.getLength()) + " bytes)");
+            logger.info("\treading file split {}", split.getPath().getName() + " ({}", split.getStart() + "..." + (split.getStart() + split.getLength()), "{} {} bytes)");
             final RecordReader reader = inputFormat.createRecordReader(split, job);
 
             float lastProgress = -1f;
@@ -134,10 +145,10 @@ public abstract class RecordReaderWriterTest {
         assertTrue(foundKeyValue);
 
         if (null != writer) {
-            writer.close(new TaskAttemptContext(configuration, job.getTaskAttemptID()));
+            writer.close(new TaskAttemptContextImpl(configuration, job.getTaskAttemptID()));
             for (int i = 1; i < 10; i++) {
-                final File outputDirectory = new File(new URL(configuration.get("mapred.output.dir")).toURI());
-                final List<FileSplit> splits = generateFileSplits(new File(outputDirectory.getAbsoluteFile() + "/_temporary/" + job.getTaskAttemptID().getTaskID().toString().replace("task", "_attempt") + "_0" + "/part-m-00000"), i);
+                final File outputDirectory = new File(new URL(configuration.get("mapreduce.output.fileoutputformat.outputdir")).toURI());
+                final List<FileSplit> splits = generateFileSplits(new File(outputDirectory.getAbsoluteFile() + "/_temporary/0/_temporary/" + job.getTaskAttemptID().getTaskID().toString().replace("task", "attempt") + "_0" + "/part-m-00000"), i);
                 validateFileSplits(splits, configuration, inputFormatClass, Optional.empty());
             }
         }

@@ -33,8 +33,10 @@ import static org.apache.tinkerpop.gremlin.LoadGraphWith.GraphData.MODERN;
 
 /**
  * @author Daniel Kuppitz (http://gremlin.guru)
+ * @deprecated As of release 3.1.0-incubating
  */
 @RunWith(GremlinProcessRunner.class)
+@Deprecated
 public abstract class MapKeysTest extends AbstractGremlinProcessTest {
 
     public abstract Traversal<Vertex, Double> get_g_V_outE_valuesXweightX_groupCount_mapKeys();
@@ -44,15 +46,23 @@ public abstract class MapKeysTest extends AbstractGremlinProcessTest {
     @Test
     @LoadGraphWith(MODERN)
     public void g_V_outE_valuesXweightX_groupCount_mapKeys() {
-        final List<Traversal<Vertex, Double>> traversals = Arrays.asList(
-                get_g_V_outE_valuesXweightX_groupCount_mapKeys(),
-                get_g_V_outE_valuesXweightX_groupCount_unfold_mapKeys());
-        for (final Traversal<Vertex, Double> traversal : traversals) {
-            printTraversalForm(traversal);
-            checkResults(Arrays.asList(0.2, 0.4, 0.5, 1.0), traversal);
-        }
+        final Traversal<Vertex, Double> traversal = get_g_V_outE_valuesXweightX_groupCount_mapKeys();
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList(0.2, 0.4, 0.5, 1.0), traversal);
     }
 
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_outE_valuesXweightX_groupCount_unfold_mapKeys() {
+        final Traversal<Vertex, Double> traversal = get_g_V_outE_valuesXweightX_groupCount_unfold_mapKeys();
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList(0.2, 0.4, 0.5, 1.0), traversal);
+    }
+
+    /**
+     * @deprecated As of release 3.1.0-incubating
+     */
+    @Deprecated
     public static class Traversals extends MapKeysTest {
 
         @Override

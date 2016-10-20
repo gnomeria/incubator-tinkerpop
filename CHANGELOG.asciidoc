@@ -15,17 +15,965 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ////
 TinkerPop3 CHANGELOG
-=====================
+====================
 
+TinkerPop 3.2.0 (Nine Inch Gremlins)
+------------------------------------
+
+image::https://raw.githubusercontent.com/apache/tinkerpop/master/docs/static/images/nine-inch-gremlins.png[width=185]
+
+[[release-3-3-0]]
+TinkerPop 3.3.0 (Release Date: NOT OFFICIALLY RELEASED YET)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Replaced term `REST` with `HTTP` to remove any confusion as to the design of the API.
+* Moved `gremlin-benchmark` under `gremlin-tools` module.
+* Added `gremlin-tools` and its submodule `gremlin-coverage`.
+* Changed `gremlin-benchmark` system property for the report location to `benchmarkReportDir` for consistency.
+
+[[release-3-2-3]]
+TinkerPop 3.2.3 (Release Date: October 17, 2016)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This release also includes changes from <<release-3-1-5, 3.1.5>>.
+
+* Restructured Gremlin-Python's GraphSON I/O package to make it easier for users to register serializers/deserializers. (*breaking*)
+* Fixed a bug with `TraversalOpProcessor` that was returning a final result prior to committing the transaction.
+* Fixed a bug in `ConnectiveStrategy` where infix and/or was not correctly reasoning on `choose()` `HasNextStep` injections.
+* Increased performance of `CredentialGraph` authentication.
+* Removed Java 8 stream usage from `TraversalHelper` for performance reasons.
+* Fixed a bug in `RepeatStep` where `emit().as('x')` wasn't adding the step labels to the emit-traverser.
+* Added `GraphComputing.atMaster(boolean)` to allow steps to know whether they are executing at master or distributed at workers.
+* Fixed a bug in OLAP where `DedupGlobalStep` wasn't de-duping local master traversers.
+* Added `HasContainerHolder.removeHasContainer()`-method with default `UnsupportedOperationException` implementation.
+* `TraversalSource.withComputer()` is simplified to add a `VertexProgramStrategy`. Easier for language variants.
+* Fixed a `Set`, `List`, `Map` bug in the various `Translators` where such collections were not being internally translated.
+* Fixed a `Bytecode` bug where nested structures (map, list, set) were not being analyzed for bindings and bytecode conversions.
+* Fixed a `String` bug in `GroovyTranslator` and `PythonTranslator` where if the string has double-quotes it now uses """ """.
+* Added a default `TraversalStrategy.getConfiguration()` which returns the configuration needed to construct the strategy.
+* `Computer` instances can be created with `Computer.create(Configuration)` and accessed via `Computer.getConf()`.
+* Every `TraversalStrategy` can be created via a `Configuration` and a static `MyStrategy.create(Configuration)`.
+* Added language-agnostic `TraversalStrategy` support in `Bytecode`.
+* Added `PartitionStrategy.Builder.readPartitions()` and deprecated `PartitionStrategy.Builder.addPartition()`.
+* A new version of `LazyBarrierStrategy` has been created and added to the default strategies.
+* `FilterRankStrategy` now propagates labels "right" over non-`Scoping` filters.
+* Fixed a bug in `ConnectiveP` where nested equivalent connectives should be inlined.
+* Fixed a bug in `IncidentToAdjacentStrategy` where `TreeStep` traversals were allowed.
+* Fixed a end-step label bug in `MatchPredicateStrategy`.
+* Fixed a bug in `MatchPredicateStrategy` where inlined traversals did not have strategies applied to it.
+* Fixed a bug in `RepeatUnrollStrategy` where inlined traversal did not have strategies applied to it.
+* Fixed padding of prompt in Gremlin Console when the number of lines went beyond a single digit.
+* Fixed GraphSON 2.0 namespace for `TinkerGraph` to be "tinker" instead of "gremlin".
+* Dropped serialization support in GraphSON 2.0 for `Calendar`, `TimeZone`, and `Timestamp`.
+* Added `TraversalHelper.copyLabels()` for copying (or moving) labels form one step to another.
+* Added `TraversalHelper.applySingleLevelStrategies()` which will apply a subset of strategies but not walk the child tree.
+* Added the concept that hidden labels using during traversal compilation are removed at the end during `StandardVerificationStrategy`. (*breaking*)
+* Added `InlineFilterStrategy` which will determine if various `TraversalParent` children are filters and if so, inline them.
+* Removed `IdentityRemovalStrategy` from the default listing as its not worth the clock cycles.
+* Removed the "!" symbol in `NotStep.toString()` as it is confusing and the `NotStep`-name is sufficient.
+* Fixed a bug in `TraversalVertexProgram` (OLAP) around ordering and connectives (i.e. `and()` and `or()`).
+* Added `AbstractGremlinProcessTest.checkOrderedResults()` to make testing ordered results easier.
+* `AbstractLambdaTraversal` now supports a `bypassTraversal` where it is possible for strategies to redefine such lambda traversals.
+* Added an internal utility `ClassFilterStep` which determines if the traverser object's class is an instance of the provided class.
+* `ConnectiveStep` extends `FilterStep` and thus, is more appropriately categorized in the step hierarchy.
+* `PropertyMapStep` supports a provided traversal for accessing the properties of the element. (*breaking*)
+* `SubgraphStrategy` now supports vertex property filtering.
+* Fixed a bug in Gremlin-Python `P` where predicates reversed the order of the predicates.
+* Added tests to `DedupTest` for the `dedup(Scope, String...)` overload.
+* Added more detailed reference documentation for IO formats.
+* Fixed a bug in serialization of `Lambda` instances in GraphSON, which prevented their use in remote traversals.
+* Fixed a naming bug in Gremlin-Python where `P._and` and `P._or` should be `P.and_` and `P.or_`. (*breaking*)
+* `where()` predicate-based steps now support `by()`-modulation.
+* Added Gryo serialization for `Bytecode`.
+* Moved utility-based serializers to `UtilSerializers` for Gryo - these classes were private and hence this change is non-breaking.
+* `TraversalRing` returns a `null` if it does not contain traversals (previously `IdentityTraversal`).
+* Deprecated `Graph.Exceptions.elementNotFoundException()` as it was not used in the code base outside of the test suite.
+* Fixed a `JavaTranslator` bug where `Bytecode` instructions were being mutated during translation.
+* Added `Path` to Gremlin-Python with respective GraphSON 2.0 deserializer.
+* `Traversal` and `TraversalSource` now implement `AutoCloseable`.
+* Added "keep-alive" functionality to the Java driver, which will send a heartbeat to the server when normal request activity on a connection stops for a period of time.
+* Renamed the `empty.result.indicator` preference to `result.indicator.null` in Gremlin Console
+* If `result.indicator.null` is set to an empty string, then no "result line" is printed in Gremlin Console.
+* Deprecated `reconnectInitialDelay` on the Java driver.
+* Added some validations to `Cluster` instance building.
+* Produced better errors in `readGraph` of `GryoReader` and `GraphSONReader` if a `Vertex` cannot be found in the cache on edge loading.
+* VertexPrograms can now declare traverser requirements, e.g. to have access to the path when used with `.program()`.
+* New build options for `gremlin-python` where `-DglvPython` is no longer required.
+* Added missing `InetAddress` to GraphSON extension module.
+* Added new recipe for "Pagination".
+* Added new recipe for "Recommendation".
+* Added functionality to Gremlin-Server REST endpoint to forward Exception Messages and Class in HTTP Response
+* Gremlin Server `TraversalOpProcessor` now returns confirmation upon `Op` `close`.
+* Added `close` method Java driver and Python driver `DriverRemoteTraversalSideEffects`.
+
+Bugs
+^^^^
+
+* TINKERPOP-1423 IncidentToAdjacentStrategy should be disabled for tree steps
+* TINKERPOP-1440 g:Path needs a GraphSON deserializer in Gremlin-Python
+* TINKERPOP-1457 Groovy Lambdas for remote traversals not serializable
+* TINKERPOP-1458 Gremlin Server doesn't return confirmation upon Traversal OpProcessor "close" op
+* TINKERPOP-1466 PeerPressureTest has been failing recently
+* TINKERPOP-1472 RepeatUnrollStrategy does not semi-compile inlined repeat traversal
+* TINKERPOP-1495 Global list deduplication doesn't work in OLAP
+* TINKERPOP-1500 and/or infix and choose() do not work correctly.
+* TINKERPOP-1511 Remote client addV, V()
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-790 Implement AutoCloseable on TraversalSource
+* TINKERPOP-944 Deprecate Graph.Exceptions.elementNotFound
+* TINKERPOP-1189 SimpleAuthenticator over HttpChannelizer makes Gremlin Server pretty slow and consumes more CPU
+* TINKERPOP-1249 Gremlin driver to periodically issue ping / heartbeat to gremlin server
+* TINKERPOP-1280 VertexPrograms should declare traverser requirements
+* TINKERPOP-1330 by()-modulation for where()
+* TINKERPOP-1409 Make the "null" return in the gremlin console into something more understandable  *(breaking)*
+* TINKERPOP-1431 Documentation generation requires tests to execute on gremlin-python
+* TINKERPOP-1437 Add tests for dedup(Scope) in DedupTest
+* TINKERPOP-1444 Benchmark bytecode->Traversal creation and implement GremlinServer cache if necessary.
+* TINKERPOP-1448 gremlin-python should be Python 2/3 compatible
+* TINKERPOP-1449 Streamline gremlin-python build
+* TINKERPOP-1455 Provide String-based withStrategy()/withoutStrategy() for language variant usage
+* TINKERPOP-1456 Support SubgraphStrategy.vertexProperties().
+* TINKERPOP-1460 Deprecate reconnectInitialDelay in Java driver
+* TINKERPOP-1464 Gryo Serialization for Bytecode
+* TINKERPOP-1469 Get rid of Stream-usage in TraversalHelper
+* TINKERPOP-1470 InlineFilterStrategy should try and P.or() has() children in OrSteps.
+* TINKERPOP-1486 Improve API of RemoteConnection
+* TINKERPOP-1487 Reference Documentation for IO
+* TINKERPOP-1488 Make LazyBarrierStrategy part of the default TraversalStrategies *(breaking)*
+* TINKERPOP-1492 RemoteStrategy or the RemoteConnection should append a lazy barrier().
+* TINKERPOP-1423 IncidentToAdjacentStrategy should be disabled for tree steps
+* TINKERPOP-1440 g:Path needs a GraphSON deserializer in Gremlin-Python
+* TINKERPOP-1457 Groovy Lambdas for remote traversals not serializable
+* TINKERPOP-1458 Gremlin Server doesn't return confirmation upon Traversal OpProcessor "close" op
+* TINKERPOP-1466 PeerPressureTest has been failing recently
+* TINKERPOP-1472 RepeatUnrollStrategy does not semi-compile inlined repeat traversal
+* TINKERPOP-1495 Global list deduplication doesn't work in OLAP
+* TINKERPOP-1500 and/or infix and choose() do not work correctly.
+* TINKERPOP-1511 Remote client addV, V()
+
+[[release-3-2-2]]
+TinkerPop 3.2.2 (Release Date: September 6, 2016)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This release also includes changes from <<release-3-1-4, 3.1.4>>.
+
+* Included GraphSON as a default serializer (in addition to Gryo, which was already present) in Gremlin Server if none are defined.
+* Added `gremlin-python` package as a Gremlin language variant in Python.
+* Added `Bytecode` which specifies the instructions and arguments used to construct a traversal.
+* Created an experimental GraphSON representation of `Bytecode` that will be considered unstable until 3.3.0.
+* Added `Translator` which allows from the translation of `Bytecode` into some other form (e.g. script, `Traversal`, etc.).
+* Added `JavaTranslator`, `GroovyTranslator`, `PythonTranslator`, and `JythonTranslator` for translating `Bytecode` accordingly.
+* Added `TranslationStrategy` to `gremlin-test` so translators can be tested against the process test suite.
+* Added `Traversal.Admin.nextTraverser()` to get the next result in bulk-form (w/ default implementation).
+* Added `TraversalSource.getAnonymousTraversalClass()` (w/ default implementation).
+* Added `GremlinScriptEngine` interface which specifies a `eval(Bytecode, Bindings)` method.
+* Deprecated `RemoteGraph` in favor of `TraversalSource.withRemote()` as it is more technically correct to tie a remote traversal to the `TraversalSource` than a `Graph` instance.
+* `GremlinGroovyScriptEngine` implements `GremlinScriptEngine`.
+* Added `GremlinJythonScriptEngine` which implements `GremlinScriptEngine`.
+* Removed support for submitting a Java serialized `Traversal` to Gremlin Server.
+* Removed a largely internal feature that supported automatic unrolling of traversers in the Gremlin Driver.
+* Made it possible to directly initialize `OpProcessor` implementations with server `Settings`.
+* Included GraphSON as a default serializer (in addition to Gryo, which was already present) in Gremlin Server if none are defined
+* Introduced GraphSON 2.0.
+* Deprecated `embedTypes` on the builder for `GraphSONMapper`.
+* Bumped to Netty 4.0.40.final.
+* Defaulted the `gremlinPool` setting in Gremlin Server to be zero, which will instructs it to use `Runtime.availableProcessors()` for that settings.
+* Changed scope of log4j dependencies so that they would only be used in tests and the binary distributions of Gremlin Console and Server.
+* Deprecated `Io.Builder.registry()` in favor of the newly introduced `Io.Builder.onMapper()`.
+* Added new recipe for "Traversal Induced Values".
+* Fixed a potential leak of a `ReferenceCounted` resource in Gremlin Server.
+* Added class registrations for `Map.Entry` implementations to `GryoMapper`.
+* Added methods to retrieve `Cluster` settings in `gremlin-driver`.
+* Fixed a severe bug in `SubgraphStrategy`.
+* Deprecated `SubgraphStrategy.Builder.vertexCriterion()/edgeCriterion()` in favor of `vertices()/edges()`.
+* Fixed a small bug in `StandardVerificationStrategy` that caused verification to fail when `withPath` was used in conjunction with `ProfileStep`.
+* Added color preferences
+* Added input, result prompt preferences
+* Added multi-line indicator in Gremlin Console
+
+Bugs
+^^^^
+
+* TINKERPOP-810 store not visible
+* TINKERPOP-1151 slf4j-log4j12 / log4j is only required for testing *(breaking)*
+* TINKERPOP-1383 publish-docs.sh might publish to current too early
+* TINKERPOP-1390 IdentityRemoveStrategyTest fails randomly
+* TINKERPOP-1400 SubgraphStrategy introduces infinite recursion if filter has Vertex/Edge steps.
+* TINKERPOP-1405 profile() doesn't like withPath()
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-1037 Gremlin shell output coloring
+* TINKERPOP-1226 Gremlin Console should :clear automagically after "Display stack trace."
+* TINKERPOP-1230 Serialising lambdas for RemoteGraph
+* TINKERPOP-1274 GraphSON Version 2.0
+* TINKERPOP-1278 Implement Gremlin-Python and general purpose language variant test infrastructure
+* TINKERPOP-1285 Gremline console does not differentiate between multi-line and single-line input
+* TINKERPOP-1334 Provide a way to pull gremlin.driver.Cluster connection settings.
+* TINKERPOP-1347 RemoteConnection needs to provide TraversalSideEffects. *(breaking)*
+* TINKERPOP-1373 Default gremlinPool to number of cores
+* TINKERPOP-1386 Bump to Netty 4.0.40.Final
+* TINKERPOP-1392 Remove support for java serialized Traversal *(breaking)*
+* TINKERPOP-1394 Fix links in Recipes doc
+* TINKERPOP-1396 Traversal Induced Values Recipe
+* TINKERPOP-1402 Impossible for graph implementations to provide a class resolver for Gryo IO
+* TINKERPOP-1407 Default serializers for Gremlin Server
+* TINKERPOP-1425 Use trailing underscores in gremlin-python
+
+[[release-3-2-1]]
+TinkerPop 3.2.1 (Release Date: July 18, 2016)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This release also includes changes from <<release-3-1-3, 3.1.3>>.
+
+* `PathProcessor` steps now have the ability (if configured through a strategy) to drop `Traverser` path segments.
+* `MatchStep` in OLTP has a lazy barrier to increase the probability of bulking.
+* Added `PathRetractionStrategy` which will remove labeled path segments that will no longer be referenced.
+* Added `Path.retract()` to support retracting paths based on labels.
+* Optimized `ImmutablePath` and `MutablePath` equality code removing significant unnecessary object creation code.
+* Bumped to Groovy 2.4.7.
+* Added `RepeatUnrollStrategy` to linearize a `repeat()`-traversal if loop amount is known at compile time.
+* Fixed a bug in `BranchStep` around child integration during `clone()`.
+* Fixed a bug in `AbstractStep` around label set cloning.
+* Added `TraversalStrategyPerformanceTest` for verifying the performance gains of optimization-based traversal strategies.
+* `TraversalExplanation.prettyPrint()` exists which provides word wrapping and GremlinConsole is smart to use console width to control `toString()`.
+* `TraversalOpProcessor` (`RemoteConnection`) uses `HaltedTraverserStrategy` metadata to determine detachment procedure prior to returning results.
+* Allow DFS paths in `HADOOP_GREMLIN_LIBS`.
+* Added a safer serializer infrastructure for use with `SparkGraphComputer` that uses `KryoSerializer` and the new `GryoRegistrator`.
+* Added `HaltedTraverserStrategy` to allow users to get back different element detachments in OLAP.
+* Fixed a `NullPointerException` bug around nested `group()`-steps in OLAP.
+* Fixed a severe bug around halted traversers in a multi-job OLAP traversal chain.
+* Ensure a separation of `GraphComputer` and `VertexProgram` configurations in `SparkGraphComputer` and `GiraphGraphComputer`.
+* `PeerPressureVertexProgram` now supports dynamic initial vote strength calculations.
+* Added `EmptyMemory` for ease of use when no memory exists.
+* Updated `VertexComputing.generateProgram()` API to include `Memory`. *(breaking)*
+* `ImmutablePath.TailPath` is now serializable like `ImmutablePath`.
+* Added `ConfigurationCompilerProvider` which allows fine-grained control of some of the internal `GremlinGroovyScriptEngine` settings at the Groovy compilation level.
+* Intoduced the `application/vnd.gremlin-v1.0+gryo-lite` serialization type to Gremlin Server which users "reference" elements rather than "detached".
+* `GryoMapper` allows overrides of existing serializers on calls to `addCustom` on the builder.
+* Added a traversal style guide to the recipes cookbook.
+* Fixed a bug in master-traversal traverser propagation.
+* Added useful methods for custom `VertexPrograms` to be used with `program()`-step.
+* Increased the test coverage around traverser propagation within a multi-job OLAP traversal.
+* Added tests to validate the status of a transaction immediately following calls to close.
+* Added tests to ensure that threaded transactions cannot be re-used.
+* `GraphFilter` helper methods are now more intelligent when determining edge direction/label legality.
+* Added `GraphFilterStrategy` to automatically construct `GraphFilters` via traversal introspection in OLAP.
+* Updated the Gephi Plugin to support Gephi 0.9.x.
+* Increased the testing and scope of `TraversalHelper.isLocalStarGraph()`.
+* Changed signature of `get_g_VXlistXv1_v2_v3XX_name` and `get_g_VXlistX1_2_3XX_name` of `VertexTest` to take arguments for the `Traversal` to be constructed by extending classes.
+* Added `VertexProgramInterceptor` interface as a general pattern for `GraphComputer` providers to use for bypassing `GraphComputer` semantics where appropriate.
+* Added `SparkStarBarrierInterceptor` that uses Spark DSL for local star graph traversals that end with a `ReducingBarrierStep`.
+* Added `SparkInterceptorStrategy` which identifies which interceptor to use (if any) given the submitted `VertexProgram`.
+* Added `SparkSingleIterationStrategy` that does not partition nor cache the graph RDD if the traversal does not message pass.
+* Added more helper methods to `TraversalHelper` for handling scoped traversal children.
+* Deprecated all "performance" tests based on "JUnit Benchmarks".
+* `SparkGraphComputer` no longer shuffles empty views or empty outgoing messages in order to save time and space.
+* `TraversalVertexProgram` no longer maintains empty halted traverser properties in order to save space.
+* Added `List<P<V>>` constructors to `ConnectiveP`, `AndP`, and `OrP` for ease of use.
+* Added support for interactive (`-i`) and execute (`-e`) modes for Gremlin Console.
+* Displayed line numbers for script execution failures of `-e` and `-i`.
+* Improved messaging around script execution errors in Gremlin Console.
+* Added "help" support to Gremlin Console with the `-h` flag.
+* Added options to better control verbosity of Gremlin Console output with `-Q`, `-V` and `-D`.
+* Deprecated the `ScriptExecutor` - the `-e` option to `gremlin.sh` is now handled by `Console`.
+* `Traversal` now allows cancellation with `Thread.interrupt()`.
+* Added a Gremlin language variant tutorial teaching people how to embed Gremlin in a host programming language.
+
+Bugs
+^^^^
+
+* TINKERPOP-1281 Memory.HALTED_TRAVERSER transience is not sound.
+* TINKERPOP-1305 HALTED_TRAVERSERS hold wrong information
+* TINKERPOP-1307 NPE with OLTP nested group() in an OLAP group() traversal
+* TINKERPOP-1323 ComputerVerificationStrategy fails for nested match() steps
+* TINKERPOP-1341 UnshadedKryoAdapter fails to deserialize StarGraph when SparkConf sets spark.rdd.compress=true whereas GryoSerializer works
+* TINKERPOP-1348 TraversalInterruptionTest success dependent on iteration order
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-818 Consider a P.type()
+* TINKERPOP-946 Traversal respecting Thread.interrupt()
+* TINKERPOP-947 Enforce semantics of threaded transactions as manual *(breaking)*
+* TINKERPOP-1059 Add test to ensure transaction opening happens at read/write and not on close *(breaking)*
+* TINKERPOP-1071 Enhance pre-processor output
+* TINKERPOP-1091 Get KryoSerializer to work natively. *(breaking)*
+* TINKERPOP-1120 If there is no view nor messages, don't create empty views/messages in SparkExecutor
+* TINKERPOP-1144 Improve ScriptElementFactory
+* TINKERPOP-1155 gremlin.sh -e doesn't log line numbers for errors
+* TINKERPOP-1156 gremlin.sh could use a help text
+* TINKERPOP-1157 gremlin.sh should allow you to execute a script and go interactive on error or completion
+* TINKERPOP-1232 Write a tutorial demonstrating the 3 ways to write a Gremlin language variant.
+* TINKERPOP-1254 Support dropping traverser path information when it is no longer needed.
+* TINKERPOP-1268 Improve script execution options for console *(breaking)*
+* TINKERPOP-1273 Deprecate old performance tests
+* TINKERPOP-1276 Deprecate serializedResponseTimeout
+* TINKERPOP-1279 Add Iterable<V> parameter constructor to ConnectiveP subclasses
+* TINKERPOP-1282 Add more compliance tests around how memory and vertex compute keys are propagated in chained OLAP.
+* TINKERPOP-1286 Add Recipes documentation
+* TINKERPOP-1288 Support gremlin.spark.skipPartitioning configuration.
+* TINKERPOP-1290 Create VertexProgramInterceptor as a pattern for GraphComputer strategies.
+* TINKERPOP-1293 Implement GraphFilterStrategy as a default registration for GraphComputer
+* TINKERPOP-1294 Deprecate use of junit-benchmarks
+* TINKERPOP-1297 Gephi plugin on Gephi 0.9.x  *(breaking)*
+* TINKERPOP-1299 Refactor TraversalVertexProgram to make it easier to understand.
+* TINKERPOP-1308 Serialize to "reference" for Gremlin Server
+* TINKERPOP-1310 Allow OLAP to return properties as Detached
+* TINKERPOP-1321 Loosen coupling between TinkerPop serialization logic and shaded Kryo
+* TINKERPOP-1322 Provide fine-grained control of CompilerConfiguration
+* TINKERPOP-1328 Provide [gremlin-python] as an code executor in docs
+* TINKERPOP-1331 HADOOP_GREMLIN_LIBS can only point to local file system
+* TINKERPOP-1332 Improve .explain() Dialogue
+* TINKERPOP-1338 Bump to Groovy 2.4.7
+* TINKERPOP-1349 RepeatUnrollStrategy should unroll loops while maintaining equivalent semantics.
+* TINKERPOP-1355 Design HasContainer for extension
+
+[[release-3-2-0-incubating]]
+TinkerPop 3.2.0 (Release Date: April 8, 2016)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This release also includes changes from <<release-3-1-2-incubating, 3.1.2-incubating>>.
+
+* Bumped to Neo4j 2.3.3.
+* Renamed variable `local` to `fs` in `HadoopGremlinPlugin` to avoid a naming conflict with `Scope.local`. *(breaking)*
+* Added `GraphTraversal.optional()` which will use the inner traversal if it returns results, else it won't.
+* `GroupStep` and `GroupSideEffectStep` make use of mid-traversal reducers to limit memory consumption in OLAP.
+* Added `GraphTraversal.program(VertexProgram)` to allow arbitrary user vertex programs in OLAP.
+* Added `GraphTraversal.project()` for creating a `Map<String,E>` given the current traverser and an arbitrary number of `by()`-modulators.
+* `HADOOP_GREMLIN_LIBS` can now reference a directory in HDFS and will be used if the directory does not exist locally.
+* Added `gremlin-benchmark` module with JMH benchmarking base classes that can be used for further benchmark development.
+* `TraversalStrategies.GlobalCache` supports both `Graph` and `GraphComputer` strategy registrations.
+* `select("a","b").by("name").by("age")`-style traversals now work in OLAP with new `PathProcessorStrategy`.
+* `DedupGlobalStep` can now handle star-bound `by()`-modulators and scoped keys on `GraphComputer`.
+* Added `Computer` which is a builder for `GraphComputers` that is serializable.
+* `PersistedOutputRDD` now implements `PersistResultGraphAware` and thus, no more unneeded warnings when using it.
+* Renamed `StandardTraversalMetrics` to `DefaultTraversalMetrics` given the `DefaultXXX`-convention throughout. *(breaking)*
+* Bumped to Apache Hadoop 2.7.2.
+* Fixed a bug around profiling and nested traversals.
+* Added `gremlin.hadoop.defaultGraphComputer` so users can use `graph.compute()` with `HadoopGraph`.
+* Added `gremlin.hadoop.graphReader` and `gremlin.hadoop.graphWriter` which can handled `XXXFormats` and `XXXRDDs`.
+* Deprecated `gremlin.hadoop.graphInputFormat`, `gremlin.hadoop.graphOutputFormat`, `gremlin.spark.graphInputRDD`, and `gremlin.spark.graphOutputRDD`.
+* If no configuration is provided to `HadoopPools` it uses the default configuration to create a pool once and only once per JVM.
+* Implemented `RemoteGraph`, `RemoteConnection`, and `RemoteStrategy`.
+* Added validation to `GryoMapper` Kryo identifiers before construction to prevent accidental duplicates.
+* Added `GraphStep.addIds()` which is useful for `HasContainer` "fold ins."
+* Added a static `GraphStep.processHashContainerIds()` helper for handling id-based `HasContainers`.
+* `GraphStep` implementations should have `g.V().hasId(x)` and `g.V(x)` compile equivalently. *(breaking)*
+* Optimized `ExpandableStepIterator` with simpler logic and increased the likelihood of bulking.
+* Optimized `TraverserRequirement` calculations.
+* `Step.addStart()` and `Step.addStarts()` now take `Traverser.Admin<S>` and `Traverser.Admin<S>`, respectively. *(breaking)*
+* `Step.processNextStart()` and `Step.next()` now return `Traverser.Admin<E>`. *(breaking)*
+* `Traversal.addTraverserRequirement()` method removed. *(breaking)*
+* Fixed a `hashCode()` bug in `OrderGlobalStep` and `OrderLocalStep`.
+* Added `OrderLimitStrategy` which will ensure that partitions are limited before being merged in OLAP.
+* `ComparatorHolder` now separates the traversal from the comparator. *(breaking)*
+* Bumped to Apache Spark 1.6.1.
+* If no Spark serializer is provided then `GryoSerializer` is the default, not `JavaSerializer`.
+* Added `Operator.sumLong` as a optimized binary operator intended to be used by `Memory` reducers that know they are dealing with longs.
+* Traversers from `ComputerResultStep` are no longer attached. Attaching is only used in TinkerPop's test suite via `System.getProperties()`.
+* Fixed a `hashCode()`/`equals()` bug in `MessageScope`.
+* Fixed a severe `Traversal` cloning issue that caused inconsistent `TraversalSideEffects`.
+* `TraversalSideEffects` remain consistent and usable across multiple chained OLAP jobs.
+* Added `MemoryTraversalSideEffects` which wraps `Memory` in a `TraversalSideEffects` for use in OLAP.
+* `TraversalSideEffects` are now fully functional in OLAP save that an accurate global view is possible at the start of an iteration (not during).
+* Updated the `TraversalSideEffects` API to support registered reducers and updated `get()`-semantics. *(breaking)*
+* Split existing `profile()` into `ProfileStep` and `ProfileSideEffectStep`.
+* The `profile()`-step acts like a reducing barrier and emits `TraversalMetrics` without the need for `cap()`. *(breaking)*
+* Added `LocalBarrier` interface to allow traversers to remain distributed during an iteration so as to reduce cluster traffic.
+* Added `NoOpBarrierStep` as a `LocalBarrier` implementation of `LambdaCollectingBarrierStep(noOp)`.
+* `AggregateStep` implements `LocalBarrier` and thus, doesn't needlessly communicate its barrier traversers.
+* Fixed an OLAP-based `Barrier` synchronization bug.
+* Fixed a semantic bug in `BranchStep` (and inheriting steps) where barriers reacted locally. *(breaking)*
+* Added `MemoryComputeKey` for specification of `Memory` keys in `VertexProgram`. *(breaking)*
+* Added `VertexComputeKey` for specification of vertex compute properties in `VertexProgram`. *(breaking)*
+* Added `and`, `or`, and `addAll` to `Operator`.
+* `Memory` API changed to support setting and adding values for reduction. *(breaking)*
+* `Memory` keys can be marked as broadcast and only those values are sent to workers on each iterator.
+* `Memory` keys can be marked transient and thus deleted at the end of the OLAP job.
+* Vertex compute keys can be marked transient and thus deleted at the end of the OLAP job.
+* `VertexProgram` API changed to support `MemoryComputeKey` and `VertexComputeKey`. *(breaking)*
+* `TraversalVertexProgram` able to execute OLAP and OLTP traversal sections dynamically within the same job.
+* Removed `FinalGet` interface as all post processing of reductions should be handled by the reducing step explicitly. *(breaking)*
+* Simplified all `SupplyingBarrierStep` implementations as they no longer require `MapReduce` in OLAP.
+* Simplified all `CollectingBarrierStep` implementations as they no longer require `MapReduce` in OLAP.
+* Simplified all `ReducingBarrierStep` implementations as they no longer require `MapReduce` in OLAP.
+* All steps in OLAP that used `MapReduce` now use `Memory` to do their reductions which expands the list of legal traversals.
+* `GroupStep` simplified with `GroupHelper.GroupMap` no longer being needed. Related to the removal of `FinalGet`.
+* OLAP side-effects that are no longer generated by `MapReduce` are simply stored in `ComputerResult.Memory` w/ no disk persistence needed. *(breaking)*
+* Added `Generate` step interface which states that there could be a final generating phase to a side-effect or reduction (e.g. `GroupStep`).
+* `Barrier` step interface is now the means by which non-parallel steps communicate with their counterparts in OLAP.
+* Added `MemoryComputing` step interface which states that the step uses `MemoryComputeKeys` for its computation in OLAP.
+* Added `PeerPressureVertexProgramStep` and `GraphTraversal.peerPressure()`.
+* Added `PureTraversal` for handling pure and compiled versions of a `Traversal`. Useful in OLAP.
+* Added `ScriptTraversal` which allows for delayed compilation of script-based `Traversals`.
+* Simplified `VertexProgram` implementations with a `PureTraversal`-model and deprecated `ConfigurationTraversal`.
+* Simplified script-based `Traversals` via `ScriptTraversal` and deprecated `TraversalScriptFunction` and `TraversalScriptHelper`.
+* Added `TimesModulating` interface which allows the `Step` to decide how a `times()`-modulation should be handled.
+* Added `ByModulating` interface which allows the `Step` to decide how a `by()`-modulation should be handled. *(breaking)*
+* Simplified the `by()`-modulation patterns of `OrderGlobalStep` and `OrderLocalStep`.
+* Added `GraphComputerTest.shouldSupportPreExistingComputeKeys()` to ensure existing compute keys are "revived." *(breaking)*
+* Added `GraphComputerTest.shouldSupportJobChaining()` to ensure OLAP jobs can be linearly chained. *(breaking)*
+* Fixed a bug in both `SparkGraphComputer` and `GiraphGraphComputer` regarding source data access in job chains.
+* Expanded job chaining test coverage for `GraphComputer` providers.
+* Added `TraversalHelper.onGraphComputer(traversal)`.
+* `MapReduce.map()` no longer has a default implementation. This method must be implemented. *(breaking)*
+* `TraversalVertexProgram` can work without a `GraphStep` start.
+* Added `PageRankVertexProgramStep` and `GraphTraversal.pageRank()`.
+* Added `TraversalVertexProgramStep` to support OLAP traversal job chaining.
+* Added `VertexProgramStrategy` which compiles multiple OLAP jobs into a single traversal.
+* Simplified the comparator model in `OrderGlobalStep` and `OrderLocalStep`.
+* Refactored `TraversalSource` model to allow fluent-method construction of `TraversalSources`.
+* Deprecated the concept of a `TraversalSource.Builder`.
+* Removed the concept of a `TraversalEngine`. All `Traversal` modulations are now mediated by `TraversalStrategies`. *(breaking)*
+* Added `SideEffectStrategy` for registering sideEffects in a spawned `Traversal`.
+* Added `SackStrategy` for registering a sack for a spawned `Traversal`.
+* Added `RequirementsStrategy` and `RequirementsStep` for adding dynamic `TraverserRequirements` to a `Traversal`.
+* Removed `EngineDependentStrategy`.
+* Renamed step interface `EngineDependent` to `GraphComputing` with method `onGraphComputer()`. *(breaking)*
+* Cleaned up various `TraversalStrategy` tests now that `TraversalEngine` no longer exists.
+* Added `GraphFilter` to support filtering out vertices and edges that won't be touched by an OLAP job.
+* Added `GraphComputer.vertices()` and `GraphComputer.edges()` for `GraphFilter` construction. *(breaking)*
+* `SparkGraphComputer`, `GiraphGraphComputer`, and `TinkerGraphComputer` all support `GraphFilter`.
+* Added `GraphComputerTest.shouldSupportGraphFilter()` which verifies all filtered graphs have the same topology.
+* Added `GraphFilterAware` interface to `hadoop-gremlin/` which tells the OLAP engine that the `InputFormat` handles filtering.
+* `GryoInputFormat` and `ScriptInputFormat` implement `GraphFilterAware`.
+* Added `GraphFilterInputFormat` which handles graph filtering for `InputFormats` that are not `GraphFilterAware`.
+* Fixed a bug in `TraversalHelper.isLocalStarGraph()` which allowed certain illegal traversals to pass.
+* Added `TraversalHelper.isLocalProperties()` to verify that the traversal does not touch incident edges.
+* `GraphReader` I/O interface now has `Optional<Vertex> readGraph(InputStream, GraphFilter)`. Default `UnsupportedOperationException`.
+* `GryoReader` does not materialize edges that will be filtered out and this greatly reduces GC and load times.
+* Created custom `Serializers` for `SparkGraphComputer` message-passing classes which reduce graph sizes significantly.
+
+Bugs
+^^^^
+
+* TINKERPOP-951 Barrier steps provide unexpected results in Gremlin OLAP
+* TINKERPOP-1057 GroupSideEffectStep doesn't use provided maps
+* TINKERPOP-1103 Two objects fighting for local variable name in Gremlin Console *(breaking)*
+* TINKERPOP-1149 TraversalXXXSteps Aren't Providing SideEffects
+* TINKERPOP-1181 select(Column) should not use a LambdaMapStep
+* TINKERPOP-1188 Semantics of BarrierSteps in TraversalParent global traversals is wrong. *(breaking)*
+* TINKERPOP-1194 explain() seems broken
+* TINKERPOP-1217 Repeated Logging of "The HadoopPools has not been initialized, using the default pool"
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-570 [Proposal] Provide support for OLAP to OLTP to OLAP to OLTP
+* TINKERPOP-575 Implement RemoteGraph
+* TINKERPOP-813 [Proposal] Make the Gremlin Graph Traversal Machine and Instruction Set Explicit
+* TINKERPOP-872 Remove GroupCountStep in favor of new Reduce-based GroupStep
+* TINKERPOP-890 Remove the concept of branch/ package. *(breaking)*
+* TINKERPOP-958 Improve usability of .profile() step.
+* TINKERPOP-962 Provide "vertex query" selectivity when importing data in OLAP. *(breaking)*
+* TINKERPOP-968 Add first class support for an optional traversal
+* TINKERPOP-971 TraversalSource should be fluent like GraphComputer *(breaking)*
+* TINKERPOP-1016 Replace junit-benchmarks with JMH
+* TINKERPOP-1021 Deprecate Order.valueIncr, Order.valueDecr, Order.keyIncr, and Order.keyDecr *(breaking)*
+* TINKERPOP-1032 Clean up the conf/hadoop configurations
+* TINKERPOP-1034 Bump to support Spark 1.5.2
+* TINKERPOP-1069 Support Spark 1.6.0
+* TINKERPOP-1082 INPUT_RDD and INPUT_FORMAT are bad, we should just have one key.
+* TINKERPOP-1112 Create GryoSerializers for the Spark Payload classes.
+* TINKERPOP-1121 FileSystemStorage needs to be smart about /.
+* TINKERPOP-1132 Messenger.receiveMessages() Iterator should .remove().
+* TINKERPOP-1140 TraversalVertexProgramStep in support of OLAP/OLTP conversions.
+* TINKERPOP-1153 Add ByModulating and TimesModulating interfaces.
+* TINKERPOP-1154 Create a ScriptTraversal which is Serializable and auto-compiles.
+* TINKERPOP-1162 Add VertexProgram.getTransientComputeKeys() for removing scratch-data. *(breaking)*
+* TINKERPOP-1163 GraphComputer's can have TraversalStrategies.
+* TINKERPOP-1164 ReducingBarriersSteps should use ComputerMemory, not MapReduce.
+* TINKERPOP-1166 Add Memory.reduce() as option to Memory implementations. *(breaking)*
+* TINKERPOP-1173 If no Serializer is provided in Configuration, use GryoSerializer by default (Spark)
+* TINKERPOP-1180 Add more optimized binary operators to Operator.
+* TINKERPOP-1192 TraversalSideEffects should support registered reducers (binary operators).
+* TINKERPOP-1193 Add a LocalBarrier interface.
+* TINKERPOP-1199 Use "MicroMetrics" as the mutator of the TraversalMetrics.
+* TINKERPOP-1206 ExpandableIterator can take a full TraverserSet at once -- Barriers.
+* TINKERPOP-1209 ComparatorHolder should returns a Pair<Traversal,Comparator>. *(breaking)*
+* TINKERPOP-1210 Provide an OrderLimitStep as an optimization.
+* TINKERPOP-1219 Create a test case that ensures the provider's compilation of g.V(x) and g.V().hasId(x) is identical *(breaking)*
+* TINKERPOP-1222 Allow default GraphComputer configuration
+* TINKERPOP-1223 Allow jars in gremlin.distributedJars to be read from HDFS
+* TINKERPOP-1225 Do a "rolling reduce" for GroupXXXStep in OLAP.
+* TINKERPOP-1227 Add Metrics for the TraversalOpProcessor
+* TINKERPOP-1234 program() step that takes arbitrary vertex programs
+* TINKERPOP-1236 SelectDenormalizationStrategy for select().by(starGraph) in OLAP.
+* TINKERPOP-1237 ProjectMap: For the Love of Die Faterland
+* TINKERPOP-1238 Re-use Client instances in RemoteGraph tests
 
 TinkerPop 3.1.0 (A 187 On The Undercover Gremlinz)
 --------------------------------------------------
 
-image::https://raw.githubusercontent.com/apache/incubator-tinkerpop/master/docs/static/images/gremlin-gangster.png[width=185]
+image::https://raw.githubusercontent.com/apache/tinkerpop/master/docs/static/images/gremlin-gangster.png[width=185]
 
-TinkerPop 3.1.0 (NOT OFFICIALLY RELEASED YET)
+[[release-3-1-5]]
+TinkerPop 3.1.5 (Release Date: October 17, 2016)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Improved handling of `Cluster.close()` and `Client.close()` to prevent the methods from hanging.
+* Fixed a bug in `NotStep` where child requirements were not being analyzed.
+* Fixed output redirection and potential memory leak in `GremlinGroovyScriptEngine`.
+* Corrected naming of `g_withPath_V_asXaX_out_out_mapXa_name_it_nameX` and `g_withPath_V_asXaX_out_mapXa_nameX` in `MapTest`.
+* Improved session cleanup when a close is triggered by the client.
+* Removed the `appveyor.yml` file as the AppVeyor build is no longer enabled by Apache Infrastructure.
+* Fixed TinkerGraph which was not saving on `close()` if the path only consisted of the file name.
+* Fixed a bug in `RangeByIsCountStrategy` which didn't use the `NotStep` properly.
+
+Bugs
+^^^^
+
+* TINKERPOP-1158 gremlin.sh -v emits log4j initialization errors
+* TINKERPOP-1391 issue with where filter
+* TINKERPOP-1442 Killing session should make better attempt to cleanup
+* TINKERPOP-1451 TinkerGraph persistence cannot handle a single file name as the graph location
+* TINKERPOP-1467 Improve close() operations on the Java driver
+* TINKERPOP-1478 Propogate ScriptEngine fixes from groovy to GremlinGroovyScriptEngine
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-927 bin/publish-docs.sh should only upload diffs.
+* TINKERPOP-1264 Improve BLVP docs
+* TINKERPOP-1477 Make DependencyGrabberTest an integration test
+
+[[release-3-1-4]]
+TinkerPop 3.1.4 (Release Date: September 6, 2016)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Improved the error provided by a client-side session if no hosts were available.
+* Fixed a bug in `PropertiesTest` which assumed long id values.
+* Fixed a bug in `StarGraph` around self-edges.
+* Fixed a potential leak of a `ReferenceCounted` resource in Gremlin Server.
+* Renamed distributions to make the prefix "apache-tinkerpop-" as opposed to just "apache-".
+* Fixed a problem (previously thought resolved on 3.1.3) causing Gremlin Server to lock up when parallel requests were submitted on the same session if those parallel requests included a script that blocked indefinitely.
+* Fixed bug in `TailGlobalStep` where excess bulk was not accounted for correctly.
+
+Bugs
+^^^^
+
+* TINKERPOP-1350 Server locks when submitting parallel requests on session
+* TINKERPOP-1375 Possible ByteBuf leak for certain transactional scenarios
+* TINKERPOP-1377 Closing a remote in "console mode" has bad message
+* TINKERPOP-1379 unaccounted excess in TailGlobalStep
+* TINKERPOP-1397 StarVertex self edge has buggy interaction with graph filters
+* TINKERPOP-1419 Wrong exception when a SessionedClient is initialized with no available host
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-989 Default documentation should be reference/index.html
+* TINKERPOP-1376 Rename TinkerPop artifacts
+* TINKERPOP-1413 PropertiesTest#g_V_hasXageX_propertiesXnameX assumes that ids are longs
+* TINKERPOP-1416 Write Gremlin Server log files somewhere during doc generation
+* TINKERPOP-1418 CoreTraversalTests depend on missing functionality
+
+[[release-3-1-3]]
+TinkerPop 3.1.3 (Release Date: July 18, 2016)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* Fixed bug in `SubgraphStep` where features were not being checked properly prior to reading meta-properties.
+* Ensured calls to `Result.hasNext()` were idempotent.
+* Avoid hamcrest conflict by using mockito-core instead of mockito-all dependency in `gremlin-test`.
+* Fixed bug in `GremlinExecutor` causing Gremlin Server to lock up when parallel requests were submitted on the same session if those parallel requests included a script that blocked indefinitely.
+* Changed `GremlinExecutor` timeout scheduling so that the timer would not start until a time closer to the actual start of script evaluation.
+* Fixed bug in `SubgraphStrategy` where step labels were not being propogated properly to new steps injected by the strategy.
+* Fix incorrect test `FeatureRequirement` annotations.
+* Defaulted to `Edge.DEFAULT` if no edge label was supplied in GraphML.
+* Fixed bug in `IoGraphTest` causing IllegalArgumentException: URI is not hierarchical error for external graph implementations.
+* Fixed bug in `GremlinGroovyScriptEngineFileSandboxTest` resource loading
+* Improved `TinkerGraph` performance when iterating vertices and edges.
+* Fixed a bug where timeout functions provided to the `GremlinExecutor` were not executing in the same thread as the script evaluation.
+* Fixed a bug in the driver where many parallel requests over a session would sometimes force a connection to close and replace itself.
+* Graph providers should no longer rely on the test suite to validate that hyphens work for property keys.
+* Optimized a few special cases in `RangeByIsCountStrategy`.
+* Added more "invalid" variable bindings to the list used by Gremlin Server to validate incoming bindings on requests.
+* Fixed a bug where the `ConnectionPool` in the driver would not grow with certain configuration options.
+* Fixed a bug where pauses in Gremlin Server writing to an overtaxed client would generate unexpected `FastNoSuchElementException` errors.
+* Named the thread pool used by Gremlin Server sessions: "gremlin-server-session-$n".
+* Fixed a bug in `BulkSet.equals()` which made itself apparent when using `store()` and `aggregate()` with labeled `cap()`.
+* Fixed a bug where `Result.one()` could potentially block indefinitely under certain circumstances.
+* Ensured that all asserts of vertex and edge counts were being applied properly in the test suite.
+* Fixed bug in `gremlin-driver` where certain channel-level errors would not allow the driver to reconnect.
+* `SubgraphStep` now consults the parent graph features to determine cardinality of a property.
+* Use of `Ctrl-C` in Gremlin Console now triggers closing of open remotes.
+* Bumped SLF4J to 1.7.21 as previous versions suffered from a memory leak.
+* Fixed a bug in `Neo4jGraphStepStrategy` where it wasn't defined properly as a `ProviderOptimizationStrategy`.
+* Renamed `AndTest.get_g_V_andXhasXage_gt_27X__outE_count_gt_2X_name` to `get_g_V_andXhasXage_gt_27X__outE_count_gte_2X_name` to match the traversal being tested.
+* Fixed a self-loop bug in `StarGraph`.
+* Added configuration option for disabling `:remote` timeout with `:remote config timeout none`.
+* Added `init-tp-spark.sh` to Gremlin Console binary distribution.
+* Fixed bug where use of `:x` in a Gremlin Console initialization script would generate a stack trace.
+* Added configuration options to Gremlin Driver and Server to override the SSL configuration with an `SslContext`.
+* Added driver configuration settings for SSL: `keyCertChainFile`, `keyFile` and `keyPassword`.
+* Fixed bug where transaction managed sessions were not properly rolling back transactions for exceptions encountered during script evaluation.
+* Fixed bug in `:uninstall` command if the default `/ext` directory was not used.
+* Added support to Gremlin Driver to allow either plain text or GSSAPI SASL authentication allowing the client to pass the SASL mechanism in the request.
+* Improved dryRun functionality for the docs processor. It's now possible to dry run (or full run) only specific files.
+* Added precompile of `ScriptInputFormat` scripts to `ScriptRecordReader` to improve performance.
+
+Bugs
+^^^^
+
+* TINKERPOP-906 Install plugin always fails after first unresolved dependency
+* TINKERPOP-1088 Preserve Cardinality in Subgraph
+* TINKERPOP-1092 Gremlin Console init script with :x throws exception
+* TINKERPOP-1139 [Neo4JGraph] GraphTraversal with SubgraphStrategy removes addLabelStep (as("b"))
+* TINKERPOP-1196 Calls to Result.one() might block indefinitely
+* TINKERPOP-1215 Labeled a SideEffectCapStep cause problems.
+* TINKERPOP-1242 ScriptEngineTest randomly hangs indefinately.
+* TINKERPOP-1257 Bad SackTest variable use.
+* TINKERPOP-1265 Managed Session Eval Exceptions Rollback
+* TINKERPOP-1272 Gremlin Console distribution needs bin/init-tp-spark.sh
+* TINKERPOP-1284 StarGraph does not handle self-loops correctly.
+* TINKERPOP-1300 Many asserts around vertex/edge counts on graphs not applied
+* TINKERPOP-1317 IoGraphTest throws error: URI is not hierarchical
+* TINKERPOP-1318 java.lang.NoSuchMethodError: org/hamcrest/Matcher.describeMismatch
+* TINKERPOP-1319 several FeatureRequirement annotations are incorrect in gremlin-test
+* TINKERPOP-1320 GremlinGroovyScriptEngineFileSandboxTest throws error: URI is not hierarchical
+* TINKERPOP-1324 Better error for invalid args to addV()
+* TINKERPOP-1350 Server locks when submitting parallel requests on session
+* TINKERPOP-1351 Number of connections going beyond the pool max size
+* TINKERPOP-1352 Connection Pool doesn't always grow
+* TINKERPOP-1359 Exception thrown when calling subgraph() on Neo4jGraph
+* TINKERPOP-1360 intermittent error in spark-gremlin integration test
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-939 Neo4jGraph should support HighAvailability (Neo4jHA).
+* TINKERPOP-1003 Setting up latest/current links for bins and docs.
+* TINKERPOP-1020 Provide --dryRun selectivity for "half publishing" docs.
+* TINKERPOP-1063 TinkerGraph performance enhancements
+* TINKERPOP-1229 More Descriptive Messaging for :remote console
+* TINKERPOP-1260 Log for validate-distribution.sh
+* TINKERPOP-1263 Pass SASL mechanism name through with initial SASL response
+* TINKERPOP-1267 Configure Console for no timeout on remote requests
+* TINKERPOP-1269 More SSL settings for driver
+* TINKERPOP-1295 Precompile ScriptInputFormat scripts once during initialization of ScriptRecordReader
+* TINKERPOP-1301 Provide Javadoc for ScriptInput/OutputFormat's
+* TINKERPOP-1302 Ctrl-C should kill open remotes in Console
+* TINKERPOP-1312 .count().is(0) is not properly optimized
+* TINKERPOP-1314 Improve error detection in docs preprocessor
+* TINKERPOP-1354 Include all static enum imports in request validation for bindings *(breaking)*
+
+[[release-3-1-2-incubating]]
+TinkerPop 3.1.2 (Release Date: April 8, 2016)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Fixed two `NullPointerException`-potential situations in `ObjectWritable`.
+* Provided Docker script that allows the execution of several build tasks within a Docker container.
+* Added a per-request `scriptEvaluationTimeout` option to the Gremlin Server protocol.
+* Changed `DriverRemoteAcceptor` to send scripts as multi-line.
+* Fixed a bug in `gremlin-driver` where connections were not returning to the pool after many consecutive errors.
+* Fixed a bug where `tree()` did not serialize into GraphSON.
+* Bumped to SLF4j 1.7.19.
+* Bumped to Apache Hadoop 2.7.2.
+* Fixed a bug in `gremlin-driver` where a really fast call to get a `Future` to wait for a result might not register an error raised from the server.
+* Fixed a severe bug where `LP_O_OB_P_S_SE_SL_Traverser` was not registered with `GryoMapper`.
+* The future from `GremlinExecutor.eval()` is completed after the entire evaluation lifecyle is completed.
+* Spark `Memory` uses `collect().iterator()` instead of `toLocalIterator()` to reduce noise in Spark UI.
+* Added the `:remote console` option which flips the Gremlin Console into a remote-only mode where all script evaluation is routed to the currently configured remote, which removes the need to use the `:>` command.
+* Added `allowRemoteConsole()` to the `RemoteAcceptor` interface.
+* The `:remote` for `tinkerpop.server` now includes an option to establish the connection as a "session".
+* Provided an implementation for calls to `SessionedClient.alias()`, which formerly threw an `UnsupportedOperationException`.
+* Bumped to commons-collections 3.2.2.
+* Fixed a bug where `OrderGlobalStep` and `OrderLocalStep` were not incorporating their children's traverser requirements.
+* Fixed a compilation bug in `TraversalExplanation`.
+* Fixed bug where a session explicitly closed was being closed again by session expiration.
+* Improved the recovery options for `gremlin-driver` after failed requests to Gremlin Server.
+* Added `maxWaitForSessionClose` to the settings for `gremlin-driver`.
+* Bumped to Netty 4.0.34.Final.
+* Added "interpreter mode" for the `ScriptEngine` and Gremlin Server which allows variables defined with `def` or a type to be recognized as "global".
+* Bumped to Apache Groovy 2.4.6.
+* Added the `gremlin-archetype-server` archetype that demonstrates
+* Added the `gremlin-archetype-tinkergraph` archetype that demonstrates a basic project that uses TinkerGraph.
+* Added `gremlin-archetype` module to house TinkerPop "examples".
+* Fixed a condition where `ConnectionPool` initialization in the driver would present a `NullPointerException` on initialization if there were errors constructing the pool in full.
+* Fixed a bug in the round-robin load balancing strategy in the driver would waste requests potentially sending messages to dead hosts.
+* Added new Provider Documentation book - content for this book was extracted from the reference documentation.
+* Fixed a bug where multiple "close" requests were being sent by the driver on `Client.close()`.
+* Fixed an `Property` attach bug that shows up in serialization-based `GraphComputer` implementations.
+* Fixed a pom.xml bug where Gremlin Console/Server were not pulling the latest Neo4j 2.3.2.
+* Fixed bug in "round robin" load balancing in `gremlin-driver` where requests were wrongly being sent to the same host.
+* Prevented the spawning of unneeded reconnect tasks in `gremlin-driver` when a host goes offline.
+* Fixed bug preventing `gremlin-driver` from reconnecting to Gremlin Server when it was restarted.
+* Better handled errors that occurred on commits and serialization in Gremlin Server to first break the result iteration loop and to ensure commit errors were reported to the client.
+* Added GraphSON serializers for the `java.time.*` classes.
+* Improved the logging of the Gremlin Server REST endpoint as it pertained to script execution failures.
+* `TraversalExplanation` is now `Serializable` and compatible with GraphSON and Gryo serialization.
+* Fixed a problem with global bindings in Gremlin Server which weren't properly designed to handle concurrent modification.
+* Deprecated `ScriptElementFactory` and made the local `StarGraph` globally available for `ScriptInputFormat`'s `parse()` method.
+* Improved reusability of unique test directory creation in `/target` for `AbstractGraphProvider`, which was formerly only available to Neo4j, by adding `makeTestDirectory()`.
+* Optimized memory-usage in `TraversalVertexProgram`.
+* `Graph` instances are not merely "closed" at the end of tests, they are "cleared" via `GraphProvider.clear()`, which should in turn cleans up old data for an implementation.
+* Expanded the Gremlin Server protocol to allow for transaction management on in-session requests and updated the `gremlin-driver` to take advantage of that.
+* Greatly reduced the amount of objects required in OLAP for the `ReducingBarrierStep` steps.
+* Improved messages for the different distinct "timeouts" that a user can encounter with Gremlin Server.
+
+Bugs
+^^^^
+
+* TINKERPOP-1041 StructureStandardTestSuite has file I/O issues on Windows
+* TINKERPOP-1105 SparkGraphComputer / Null Pointer Exceptions for properties traversals
+* TINKERPOP-1106 Errors on commit in Gremlin Server don't register as exception on driver
+* TINKERPOP-1125 RoundRobin load balancing always uses the second Host when size = 2
+* TINKERPOP-1126 A single Host spawns many reconnect tasks
+* TINKERPOP-1127 client fails to reconnect to restarted server
+* TINKERPOP-1146 IoTest are not clearing the db after the test run
+* TINKERPOP-1148 ConcurrentModificationException with bindings in Gremlin Server
+* TINKERPOP-1150 Update pom file dependencies to work with Neo4j 2.3.2
+* TINKERPOP-1159 Client sends multiple session close messages per host
+* TINKERPOP-1168 Switch plugins in docs preprocessor
+* TINKERPOP-1172 Reconnect to Gremlin Server previously marked as dead
+* TINKERPOP-1175 Anonymous traversals can't be explained
+* TINKERPOP-1184 Sessions not being closed properly
+* TINKERPOP-1216 OrderStep or O_Traverser is broken
+* TINKERPOP-1239 Excessive continual failure for requests can cause TimeoutException in driver
+* TINKERPOP-1245 Gremlin shell starts incorrectly on OS X due to awk difference
+* TINKERPOP-1251 NPE in ObjectWritable.toString
+* TINKERPOP-1252 Failed Neo4j transaction can leave Neo4jTransaction in inconsistent state
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-732 gremlin-server GraphSON serializer issue with tree()
+* TINKERPOP-916 Develop a better "simple" driver for testing and example purposes
+* TINKERPOP-937 Extract the implementations sections of the primary documentation to its own book
+* TINKERPOP-956 Connection errors tend to force a complete close of the channel
+* TINKERPOP-1039 Enable auto-commit for session'd requests.
+* TINKERPOP-1068 Bump to support jbcrypt-0.4m.jar
+* TINKERPOP-1080 Bump Netty version - 4.0.34.Final
+* TINKERPOP-1085 Establish TinkerPop "example" projects
+* TINKERPOP-1096 Support aliasing for sessions in Gremlin Server
+* TINKERPOP-1097 Gremlin Console supporting sessions
+* TINKERPOP-1107 Provide a way to support global variables with sandboxing enabled
+* TINKERPOP-1109 Make Gremlin Console better suited for system level installs
+* TINKERPOP-1131 TraversalVertexProgram traverser management is inefficient memory-wise.
+* TINKERPOP-1135 Improve GraphSON representation of java.time.* classes
+* TINKERPOP-1137 Deprecate ScriptElementFactory and make star graph globally available
+* TINKERPOP-1138 Improve messaging on server timeouts
+* TINKERPOP-1147 Add serialization for TraversalExplanation
+* TINKERPOP-1160 Add timeout configuration for time to wait for connection close
+* TINKERPOP-1165 Tooling Support: Compile with -parameters
+* TINKERPOP-1176 Bump Groovy version - 2.4.6
+* TINKERPOP-1177 Improve documentation around Spark's storage levels
+* TINKERPOP-1197 Document Gremlin Server available metrics
+* TINKERPOP-1198 Bump commons-collections to 3.2.2
+* TINKERPOP-1213 missing docs for has(label, key, value)
+* TINKERPOP-1218 Usage of toLocalIterator Produces large amount of Spark Jobs
+
+[[release-3-1-1-incubating]]
+TinkerPop 3.1.1 (Release Date: February 8, 2016)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Made `GryoRecordReader` more robust to 0 byte record splits.
+* Fixed a constructor/serialization bug in `LP_O_OB_S_SE_SL_Traverser`.
+* Added a lazy iterator, memory safe implementation of MapReduce to `SparkGraphComputer`.
+* Added `MapReduce.combine()` support to `SparkGraphComputer`.
+* Bumped to Neo4j 2.3.2.
+* Fixed Java comparator contract issue around `Order.shuffle`.
+* Optimized a very inefficient implementation of `SampleLocalStep`.
+* Reduced the complexity and execution time of all `AbstractLambdaTraversal` instances.
+* `DefaultTraversal` has a well defined `hashCode()` and `equals()`.
+* Added serializers to Gryo for `java.time` related classes.
+* Integrated `NumberHelper` in `SackFunctions`.
+* Deprecated `VertexPropertyFeatures.supportsAddProperty()` which effectively was a duplicate of `VertexFeatures.supportsMetaProperties`.
+* The Spark persistence `StorageLevel` can now be set for both job graphs and `PersistedOutputRDD` data.
+* Added to the list of "invalid binding keys" allowed by Gremlin Server to cover the private fields of `T` which get exposed in the `ScriptEngine` on static imports.
+* Added `BulkDumperVertexProgram` that allows to dump a whole graph in any of the supported IO formats (GraphSON, Gryo, Script).
+* Fixed a bug around duration calculations of `cap()`-step during profiling.
+* It is possible to completely avoid using HDFS with Spark if `PersistedInputRDD` and `PersistedOutpuRDD` are leveraged.
+* `InputRDD` and `OutputRDD` can now process both graphs and memory (i.e. sideEffects).
+* Removed Groovy specific meta-programming overloads for handling Hadoop `FileSystem` (instead, its all accessible via `FileSystemStorage`).
+* Added `FileSystemStorage` and `SparkContextStorage` which both implement the new `Storage` API.
+* Added `Storage` to the gremlin-core io-package which providers can implement to allow conventional access to data sources (e.g. `ls()`, `rm()`, `cp()`, etc.).
+* Bumped to Spark 1.5.2.
+* Bumped to Groovy 2.4.5.
+* Added `--noClean` option in `bin/process-docs.sh` to prevent the script from cleaning Grapes and HDFS.
+* Execute the `LifeCycle.beforeEval()` in the same thread that `eval()` is executed in for `GremlinExecutor`.
+* Improved error handling of Gremlin Console initialization scripts to better separate errors in initialization script I/O versus execution of the script itself.
+* Fixed a bug in `Graph.OptOut` when trying to opt-out of certain test cases with the `method` property set to "*".
+* Added another `BulkLoader` implementation (`OneTimeBulkLoader`) that doesn't store temporary properties in the target graph.
+* Added option to allow for a custom `ClassResolver` to be assigned to a `GryoMapper` instance.
+* Fixed a `SparkGraphComputer` sorting bug in MapReduce that occurred when there was more than one partition.
+* Added `strictTransactionManagement` to the Gremlin Server settings to indicate that the `aliases` parameter must be passed on requests and that transaction management will be scoped to the graphs provided in that argument.
+* Fixed a `NullPointerException` bug in `PeerPressureVertexProgram` that occurred when an adjacency traversal was not provided.
+* Standardized "test data directories" across all tests as generated by `TestHelper`.
+* Fixed a bug in Gremlin Server where error messages were not always being passed back in the `statusMessage` field of the `ResponseMessage`.
+* Added validation for parameter `bindings` to ensure that keys were `String` values.
+* Improved Transaction Management consistency in Gremlin Server.
+* Added `FileSandboxExtension` which takes a configuration file to white list methods and classes that can be used in `ScriptEngine` execution.
+* Deprecated `SandboxExtension` and `SimpleSandboxExtension` in favor of `AbstractSandboxExtension` which provides better abstractions for those writing sandboxes.
+* Fixed a long standing "view merge" issue requiring `reduceByKey()` on input data to Spark. It is no longer required.
+* Added `Spark` static object to allow "file system" control of persisted RDDs in Spark.
+* Added a Spark "job server" to ensure that persisted RDDs are not garbage collected by Spark.
+* Improved logging control during builds with Maven.
+* Fixed settings that weren't being passed to the Gremlin Driver `Cluster` through configuration file.
+* `Column` now implements `Function`. The modulator `by(valueDecr)` can be replaced by `by(values,decr)` and thus, projection and order are separated.
+* Added `InputRDDFormat` which wraps an `InputRDD` to make it accessible to Hadoop and not just Spark.
+* Added `AbstractSparkTest` which handles closing `SparkContext` instances between tests now that we support persisted contexts.
+* Fixed a serialization bug in `GryoSerializer` that made it difficult for graph providers to yield `InputRDDs` for `SparkGraphComputer`.
+* `SparkGraphComputer` is now tested against Gryo, GraphSON, and `InputRDD` data sources.
+* `HadoopElementIterator` (for Hadoop-Gremlin OLTP) now works for any `InputFormat`, not just `FileInputFormats`.
+* Added `Traverser.Admin.getTags()` which are used to mark branches in a traversal (useful in `match()` and related future steps).
+* Fixed the `Future` model for `GiraphGraphComputer` and `SparkGraphComputer` so that class loaders are preserved.
+* Added support for arbitrary vertex ID types in `BulkLoaderVertexProgram`.
+* Deprecated `credentialsDbLocation` from `SimpleAuthenticator` in Gremlin Server.
+* `TinkerGraph` has "native" serialization in GraphSON, which enables it to be a return value from Gremlin Server.
+* Improved the ability to embed Gremlin Server by providing a way to get the `ServerGremlinExecutor` and improve reusability of `AbstractEvalOpProcessor` and related classes.
+* Added `Authenticator.newSaslNegotiator(InetAddress)` and deprecated the zero-arg version of that method.
+* `ProfileStep` is now available off of `Traversal` via `profile()`. To be consistent with `Traversal.explain()`.
+* If no comparator is provided to `order()`, `Order.incr` is assumed (previously, an exception occurred).
+* Fixed various Gremlin-Groovy tests that assumed `toString()`-able ids.
+* Split TinkerPop documentation into different directories.
+* Added `explain()`-step which yields a `TraversalExplanation` with a pretty `toString()` detailing the compilation process.
+* Fixed a traversal strategy ordering bug in `AdjacentToIncidentStrategy` and `IncidentToAdjacentStrategy`.
+* Made a number of changes to improve traversal startup and execution performance.
+* Added support for 'gremlin.tinkergraph.graphLocation' to accept a fully qualified class name that implements `Io.Builder` interface.
+
+Bugs
+^^^^
+
+* TINKERPOP-763 IsStep broken when profiling is enabled.
+* TINKERPOP-972 Cluster::close does not shut down its executor
+* TINKERPOP-973 BLVP shouldn't clear configuration properties
+* TINKERPOP-976 Fail earlier if invalid version is supplied in validate-distribution.sh
+* TINKERPOP-977 Dead link to traversal javadocs
+* TINKERPOP-979 ComputerVerificationStrategy not picking up Order local traversal
+* TINKERPOP-985 shouldPersistDataOnClose makes incorrect feature check
+* TINKERPOP-990 Mixed types in VertexPropertyTest
+* TINKERPOP-993 cyclicPath is not(simplePath)
+* TINKERPOP-997 FeatureRequirementSet.SIMPLE should not require multi-property *(breaking)*
+* TINKERPOP-1000 GremlinGroovyScriptEngineOverGraphTest failures
+* TINKERPOP-1001 SugarLoaderPerformanceTest contains hardcoded vertex ids
+* TINKERPOP-1002 Should rollback transaction after catching on close
+* TINKERPOP-1006 Random error during builds: shouldReloadClassLoaderWhileDoingEvalInSeparateThread()
+* TINKERPOP-1011 HadoopGraph can't re-attach when the InputFormat is not a FileInputFormat
+* TINKERPOP-1012 BulkLoaderVertexProgram shouldn't assume vertex IDs of type Long
+* TINKERPOP-1025 Solve SparkContext Persistence Issues with BulkLoaderVertexProgram
+* TINKERPOP-1027 Merge view prior to writing graphRDD to output format/rdd
+* TINKERPOP-1036 Support self-looping edges in IO
+* TINKERPOP-1052 @Graph.OptOut causes Exception during Suite setup
+* TINKERPOP-1060 LambdaRestrictionStrategy too restrictive
+* TINKERPOP-1075 Profile duration of cap step seems broken.
+* TINKERPOP-1083 Traversal needs a hashCode() and equals() definition.
+* TINKERPOP-1089 Order.shuffle implementation is too fragile
+* TINKERPOP-1119 LP_O_OB_S_SE_SL_Traverser doesn't have a protected constructor().
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-320 BulkDumperVertexProgram
+* TINKERPOP-379 MessageScope.Local.setStaticMessage(M msg)
+* TINKERPOP-824 Do we need runtime BigDecimal in more places?
+* TINKERPOP-859 Provide a more general way to set log levels in plugins
+* TINKERPOP-860 Bindings applied to the PluginAcceptor should appear to Gremlin Server
+* TINKERPOP-886 Allow any GraphReader/Writer to be persistence engine for TinkerGraph
+* TINKERPOP-891 Re-examine Sandboxing Abstractions
+* TINKERPOP-912 Improve the ability to embed Gremlin Server with Channelizer injection
+* TINKERPOP-928 Use directories to separate different books
+* TINKERPOP-930 Tie Alias to Transaction Manager in Gremlin Server
+* TINKERPOP-938 Add a "clear SNAPSHOT jars" section to the process-docs.sh.
+* TINKERPOP-941 Improve error message for wrong order().by() arguments
+* TINKERPOP-943 Warn if Gremlin Server is running prior to generating docs
+* TINKERPOP-945 Exceptions should allow me to include root cause if/when available
+* TINKERPOP-952 Include Cardinality.list example in VertexProperty section of main docs.
+* TINKERPOP-954 Consistent test directory usage
+* TINKERPOP-957 Improve speed of addV()
+* TINKERPOP-964 Test XXXGraphComputer on a Hadoop2 cluster (non-pseudocluster).
+* TINKERPOP-970 ProfileStep should be off Traversal, not GraphTraversal
+* TINKERPOP-978 Native TinkerGraph Serializers for GraphSON
+* TINKERPOP-981 Deprecate support for credentialsDbLocation in Gremlin Server Config
+* TINKERPOP-982 valuesDecr, valuesIncr, keysDecr, and valuesDecr is lame.
+* TINKERPOP-983 Provide a way to track open Graph instances in tests
+* TINKERPOP-984 Use GraphProvider for id conversion in Groovy Environment test suite
+* TINKERPOP-987 Use tinkerpop.apache.org URL in all documentation and homepage
+* TINKERPOP-988 SparkGraphComputer.submit shouldn't use ForkJoinPool.commonPool
+* TINKERPOP-992 Better support for schema driven Graphs in IO related tests
+* TINKERPOP-994 Driver using deprecated Rebindings Still
+* TINKERPOP-995 Add Authenticator.newSaslNegotiator(InetAddress)
+* TINKERPOP-996 Please delete old releases from mirroring system
+* TINKERPOP-998 Deprecate VertexPropertyFeatures.FEATURE_ADD_PROPERTY
+* TINKERPOP-1009 Add a CAUTION to documentation about HadoopGraph and getting back elements
+* TINKERPOP-1013 Traverser tags as a safer way of using path labels
+* TINKERPOP-1018 Allow setting for maxContentLength to be set from yaml in driver
+* TINKERPOP-1019 Convert println in test to SLF4j
+* TINKERPOP-1022 Automatically warm up ops handlers
+* TINKERPOP-1023 Add a spark variable in SparkGremlinPlugin like we do hdfs for HadoopGremlinPlugin
+* TINKERPOP-1026 BVLP should store vertex IDs as String
+* TINKERPOP-1033 Store sideEffects as a persisted RDD
+* TINKERPOP-1035 Better Consistency in Gremlin Server Transaction Management
+* TINKERPOP-1045 Client-Side Hangs when attempting to access a HashMap with Keys of type Integer
+* TINKERPOP-1047 TinkerGraph GraphSON storage format broken
+* TINKERPOP-1051 Add note in best practice docs about gremlin server heap setting
+* TINKERPOP-1055 Gremlin Console FileNotFoundException can be misleading
+* TINKERPOP-1062 Make LifeCycle beforeEval execute in same thread as eval operation
+* TINKERPOP-1064 Allow a ClassResolver to be added to GryoMapper construction
+* TINKERPOP-1065 Fix some typos and clarify some wording in the TinkerPop documentation
+* TINKERPOP-1066 Add ioRegistries configuration to GraphSON MessageSerializer
+* TINKERPOP-1067 Update Groovy to 2.4.5
+* TINKERPOP-1072 Allow the user to set persistence options using StorageLevel.valueOf()
+* TINKERPOP-1073 HadoopGraph toString() is weird for Spark PersitedRDD data.
+* TINKERPOP-1086 Include gryo serializers for java.time related classes
+* TINKERPOP-1087 Add has()/order() to FilterRankStrategy
+* TINKERPOP-1093 Add Spark init.sh script and update dev documentation.
+* TINKERPOP-1100 Look deeply into adding combine()-support in Spark MapReduce.
+* TINKERPOP-1117 InputFormatRDD.readGraphRDD requires a valid gremlin.hadoop.inputLocation, breaking InputFormats (Cassandra, HBase) that don't need one
+
+[[release-3-1-0-incubating]]
+TinkerPop 3.1.0 (Release Date: November 16, 2015)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This release also includes changes from <<release-3-0-1-incubating, 3.0.1-incubating>> and <<release-3-0-2-incubating, 3.0.2-incubating>>.
+
+* Fixed bug in Gryo and GraphSON (with embedded types) serialization for serialization of results returned from `Map.entrySet()`.
+* `Transaction` settings for `onReadWrite` and `onClose` are now `ThreadLocal` in nature of standard transactions.
+* Optimized `BulkLoaderVertexProgram`. It now uses `EventStrategy` to monitor what the underlying `BulkLoader` implementation does (e.g. whether it creates a new vertex or returns an existing).
+* Integrated `NumberHelper` in `SumStep`, `MinStep`, `MaxStep` and `MeanStep` (local and global step variants).
+* Gremlin Console remoting to Gremlin Server now supports a configuration option for assigning aliases.
+* `CountMatchAlgorithm`, in OLAP, now biases traversal selection towards those traversals that start at the current traverser location to reduce message passing.
+* Fixed a file stream bug in Hadoop OLTP that showed up if the streamed file was more than 2G of data.
+* Added the ability to set thread local properties in `SparkGraphComputer` when using a persistent context.
+* Bumped to Neo4j 2.3.0.
+* Deprecated "rebindings" as an argument to Gremlin Server and replaced it with "aliases".
+* Added `PersistedInputRDD` and `PersistedOutputRDD` which enables `SparkGraphComputer` to store the graph RDD in the context between jobs (no HDFS serialization required).
+* Renamed the `public static String` configuration variable names of TinkerGraph (deprecated old variables).
+* Added `GraphComputer.configure(key,value)` to allow engine-specific configurations.
+* `GraphStep` is no longer in the `sideEffect`-package and is now in `map`-package (breaking change).
+* Added support for mid-traversal `V()`-steps (`GraphStep` semantics updated).
+* Fixed `Number` handling in `Operator` enums. Prior this change a lot of operations on mixed `Number` types returned a wrong result (wrong data type).
+* Fixed a bug in Gremlin Server/Driver serializer where empty buffers were getting returned in certain cases.
+* Renamed `ConjunctionX` to `ConnectiveX` because "conjunction" is assumed "and" (disjunction "or"), where "connective" is the parent concept.
+* Removed `PathIdentityStep` as it was a hack that is now solved by `Traversal.Admin.addTraverserRequirement()`.
+* Added `Traversal.Admin.addTraverserRequirement()` to allow a traversal strategy or source to add requirements (not only step determined anymore).
+* Added `TraverserRequirement.ONE_BULK` to state the traverser does not handle bulk.
+* Added `GraphTraversalSource.withBulk(boolean)` to enabled users to compute only using `bulk=1`.
+* Gremlin Server supports Netty native transport on linux.
+* Removed the need for `GFunction` (etc.) closure wrappers in Gremlin-Groovy as `as Function` can be used to convert closures accordingly.
+* Added `SelectColumnStep` (`select(keys)` and `select(values)`). Deprecated `mapKeys()` and `mapValues()`.
+* Renamed `gremlin.hadoop.graphInputRDD` and `gremlin.hadoop.graphOutputRDD` to `gremlin.spark.graphInputRDD` and `gremlin.spark.graphOutputRDD`, respectively.
+* Fixed a bug in `FoldStep` around bulking. This could be a breaking change, but it is the correct semantics.
+* Previous `group()`-behavior steps are accessible via the deprecated `groupV3d0()`-steps.
+* `GroupStep` and `GroupSideEffectStep` now do lazy reductions to reduce memory footprint. Breaking change for `group()` semantics.
+* Added `GroupStepHelper` with various static methods and classes that are used by both `GroupStep` and `GroupSideEffectStep`.
+* Added `BarrierStep` interface with `processAllStarts()` method which process all starts up to yielding the barrier result.
+* Fixed a severe threading issue in `TinkerGraphComputer`.
+* The location of the jars in HDFS is now `hadoop-gremlin-x.y.z-libs` to ensure multiple TinkerPop versions don't clash.
+* `GiraphGraphComputer` will only upload the jars to HDFS if it doesn't already exist (to help speed up startup time).
+* `GiraphGraphComputer.workers()` is smart about using threads and machines to load balance TinkerPop workers across cluster.
+* `GraphComputer.workers(int)` allows the user to programmatically set the number of workers to spawn.
+* Added `GryoSerializer` as the new recommended Spark `Serializer`. Handles `Graph` and `GryoMapper` registries.
+* `GryoPool` now makes use of `GryoPool.Builder` for its construction.
+* Bumped to Apache Hadoop 2.7.1.
+* Bumped to Apache Giraph 1.1.0.
+* Bumped to Apache Spark 1.5.1.
+* Split Hadoop-Gremlin apart such there is now `hadoop-gremlin`, `spark-gremlin`, and `giraph-gremlin` (and respective `GremlinPlugins`).
 * Added `LambdaCollectingBarrierStep` which generalizes `NoOpBarrierStep` and allows for `barrier(normSack)`-type operations.
 * Fixed bugs in the Gremlin Server's NIO protocol both on the server and driver side.
 * Added `Path.popEquals(Pop,Object)` to check for path equality based on `Pop` (useful for `TraverserRequirement.LABELED_PATH`).
@@ -38,7 +986,6 @@ TinkerPop 3.1.0 (NOT OFFICIALLY RELEASED YET)
 * `GraphStep` can now take a single argument `Collection` which is either elements or element ids (i.e. `g.V([1,2,3])` is supported now).
 * Added `LoopsStep` to make the loop counter accessible within `repeat()`, `until()` and `emit()`.
 * Gephi Plugin no longer requires manual insert of `store` steps to visualize a traversal.
-* Gephi Plugin visualizes `Path` objects.
 * Added a `TinkerIoRegistry` that registers a custom serializer for Gryo that will serialize an entire `TinkerGraph` instance.
 * Added configuration options to Gephi Plugin for setting the size of nodes visualized.
 * Replaced `DedupBijectionStrategy` with the more effective `FilterRankingStrategy`.
@@ -50,16 +997,139 @@ TinkerPop 3.1.0 (NOT OFFICIALLY RELEASED YET)
 * Made `Path` iterable, so that it can be `unfold()`'ed and used by local steps like `min(local)`, `max(local)`, etc.
 * `WhereTraversalStep` and `WherePredicateStep` are now the only "special" `Scoping` steps after `MatchStartStep` in `match()`.
 
+Bugs
+^^^^
+
+* TINKERPOP-774 order / dedup issues
+* TINKERPOP-799 [Proposal] with()-modulator for stream level variable binding.
+* TINKERPOP-801 groupCount() fails for vertices (elements?) (using Spark)
+* TINKERPOP-811 AddPropertyStepTest fails "all of a sudden"
+* TINKERPOP-823 addV() broken for multi-value properties
+* TINKERPOP-843 Misspecified HADOOP_GREMLIN_LIBS generates NullPointerException
+* TINKERPOP-857 Add GraphComputer.config(key,value)
+* TINKERPOP-895 Use "as BinaryOperator" and remove GBinaryOperator
+* TINKERPOP-903 Fix empty buffer return upon buffer capacity exceeded
+* TINKERPOP-910 In session transaction opened from sessionless request
+* TINKERPOP-918 ComputerVerificationStrategy is too restrictive
+* TINKERPOP-926 Renamed TinkerGraph public statics to common pattern used for other statics.
+* TINKERPOP-948 AbstractGremlinProcessTest.checkMap not asserted in GroupTest
+* TINKERPOP-953 Artifact equality is not evaluating properly
+* TINKERPOP-955 HashMap$Node not serializable
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-297 Ensure Consistent Behavior Over Deleted Elements *(breaking)*
+* TINKERPOP-333 Support VertexProperty in PartitionStrategy
+* TINKERPOP-391 More fluency in GraphComputer for parameterization.
+* TINKERPOP-616 Use Spark 1.3.0 in Hadoop-Gremlin.
+* TINKERPOP-624 Passing Detached/Referenced to Graph.vertices/edge()
+* TINKERPOP-680 Configurable Channelizer for Gremlin Driver
+* TINKERPOP-728 Improve Remote Graph Object Treatment in Console
+* TINKERPOP-756 Provide a strict parsing option for GraphMLReader
+* TINKERPOP-760 Make loop counter accessible within repeat()
+* TINKERPOP-762 Allow mid-traversal V() (and E())
+* TINKERPOP-765 Decompose AbstractTransaction for different transactional contexts *(breaking)*
+* TINKERPOP-767 Path should play well with "local" steps.
+* TINKERPOP-768 MatchStep in OLAP should be smart about current vertex.
+* TINKERPOP-769 Make the introduction of the TP3 docs story better.
+* TINKERPOP-772 TraverserRequirement.LABELED_PATH
+* TINKERPOP-796 Support merge binary operator for Gremlin sacks *(breaking)*
+* TINKERPOP-798 [Proposal] Rename mapKeys()/mapValues() to select(keys) and select(values).
+* TINKERPOP-802 Provide sack(object) so that the sack can be directly set.
+* TINKERPOP-803 A better solution to g.V(someCollection.toArray())
+* TINKERPOP-805 Enforce AutoCloseable Semantics on Transaction *(breaking)*
+* TINKERPOP-821 Improve testing around TraversalHelper around recursive methods
+* TINKERPOP-825 [Proposal] SetBulkStep (sideEffectStep)
+* TINKERPOP-826 OneToManyBarrierStrategy
+* TINKERPOP-827 Add a console session to the PageRank section of the docs.
+* TINKERPOP-829 TinkerGraphComputer should support the user specified thread/worker count.
+* TINKERPOP-835 Shade Jackson Dependencies *(breaking)*
+* TINKERPOP-836 Support Hadoop2 in place of Hadoop1
+* TINKERPOP-850 Reduce Graph.addVertex overload ambiguity *(breaking)*
+* TINKERPOP-851 GroupCountStep needs a by() for the count.
+* TINKERPOP-861 Solve "The Number Problem" for Operator (and follow on operators)
+* TINKERPOP-863 [Proposal] Turn off bulking -- or is there something more general? (hope not).
+* TINKERPOP-866 GroupStep and Traversal-Based Reductions *(breaking)*
+* TINKERPOP-868 Allow Spark Gremlin Computer to Reuse Spark Contexts
+* TINKERPOP-874 Rename Gremlin-Spark properties using gremlin.spark prefix. *(breaking)*
+* TINKERPOP-876 Rename VendorOptimizationStrategy XXXOptimizationStrategy *(breaking)*
+* TINKERPOP-879 Remove deprecated promoteBindings from GremlinExecutor *(breaking)*
+* TINKERPOP-885 Change Transaction.onReadWrite() to be a ThreadLocal setting *(breaking)*
+* TINKERPOP-888 GraphTraversal.property overloads *(breaking)*
+* TINKERPOP-896 Simplify the {{withSack}} methods of {{GraphTraversalSource}}. *(breaking)*
+* TINKERPOP-897 Remove deprecated GSupplier, GFunction, GConsumer, etc. methods. *(breaking)*
+* TINKERPOP-898 Rename ConjuctionP and ConjuctionStep to ConnectiveP and ConnectiveStep *(breaking)*
+* TINKERPOP-899 Bump to the latest version of Neo4j.
+* TINKERPOP-900 Provide by(object) which compiles to by(constant(object))
+* TINKERPOP-901 Option for use of Netty epoll on Linux to reduce GC pressure
+* TINKERPOP-904 BulkLoaderVertexProgram optimizations
+* TINKERPOP-905 Harden time oriented tests in ResultQueueTest
+* TINKERPOP-907 getters for RepeatStep.untilTraversal and RepeatStep.emitTraversal
+* TINKERPOP-908 Use line breaks in documentation
+* TINKERPOP-909 Improve steps that handle numeric data
+* TINKERPOP-911 Allow setting Thread Specific Spark JobGroup/Custom Properties based on hadoop conf
+* TINKERPOP-913 Rename Gremlin Server arguments rebinding to alias
+* TINKERPOP-914 DriverRemoteAcceptor in Gremlin Console supports aliases
+* TINKERPOP-917 Add HadoopGraph.open(String)
+* TINKERPOP-922 Add a book for Developer Documentation
+* TINKERPOP-923 Add a book for Tutorials
+* TINKERPOP-925 Use persisted SparkContext to persist an RDD across Spark jobs.
+* TINKERPOP-931 Make it possible to extend the core OpProcessor implementations
+* TINKERPOP-933 Improve release process to get files named properly
+* TINKERPOP-935 Add missing "close" operation to the session opProcessor docs
+
 TinkerPop 3.0.0 (A Gremlin Rāga in 7/16 Time)
 ---------------------------------------------
 
-image::https://raw.githubusercontent.com/apache/incubator-tinkerpop/master/docs/static/images/gremlin-hindu.png[width=225]
+image::https://raw.githubusercontent.com/apache/tinkerpop/master/docs/static/images/gremlin-hindu.png[width=225]
 
-TinkerPop 3.0.2 (NOT OFFICIALLY RELEASED YET)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[[release-3-0-2-incubating]]
+TinkerPop 3.0.2 (Release Date: October 19, 2015)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* Cleaned up `ext/` directory when plugin installation fails for `gremlin-server` and `gremlin-console`.
+* Fixed issues in `gremlin-server` when configured for HTTP basic authentication.
+* Made `BulkLoaderVertexProgram` work for any persistent TP3-supporting graph (input and output).
+* `TreeSideEffectStep` now implements `PathProcessor` which fixed a `ComputerVerificationStrategy` issue.
+* Added a shell script that verifies source and binary distributions.
+* Fixed a bulk related bug in `GroupStep` when used on `GraphComputer` (OLAP).
+* Gremlin Server binary distribution now packages `tinkergraph-gremlin` and `gremlin-groovy` as plugins to be consistent with Gremlin Console's packaging.
+* The `RepeatStep` clauses (`until()`,`emit()`,`repeat()`) can only be set at most one time in order to prevent user confusion.
+* Fixed a `clone()` bug in `RepeatStep`, `TreeStep`, `GroupCountStep`, `GroupStep`, and `TraversalRing`.
+* Fixed a thread context bug in `TinkerGraphComputer`.
+* Fixed issues with the `gremlin-driver` related to hanging connections in certain conditions.
+* TinkerGraph now has an option for persistence where the data is saved on `close()` and, if present, loaded on `open()`.
+* Added an overload for `GremlinExecutor.eval()` that takes a `Lifecycle` object to override some default settings from `GremlinExecutor.Builder`.
+* Improved session closing for transactional graphs during shutdown of Gremlin Server.
+* Fixed id parameter used in tests for `GroovyStoreTest` and `GroovyRepeatTest` to not be treated as an embedded string.
 * `GraphStep` will convert any `Vertex` or `Edge` ids to their id `Object` prior to submission to `GraphComputer` (OLAP).
 
+Bugs
+^^^^
+
+* TINKERPOP-814 ConnectionPool can fill with dead Connections
+* TINKERPOP-816 Gryo deserialization of error response with null message causes NPE and protocol desync
+* TINKERPOP-817 Gryo serialization of large responses fails and causes protocol desync
+* TINKERPOP-840 TreeTest Is not being ignored via ComputerVerificationStrategy
+* TINKERPOP-849 gremlin-server doesn't close sessions on 'close' opcode
+* TINKERPOP-855 sasl authentication type error due to Json format
+* TINKERPOP-865 Errors with HTTP REST basic auth
+* TINKERPOP-867 TinkerGraphProvider does not initialize temp dir
+* TINKERPOP-870 Rebound client requires a connection to occur on the underlying client.
+* TINKERPOP-877 Driver hangs if SSL enabled on server but not on client
+
+Improvements
+^^^^^^^^^^^^
+
+* TINKERPOP-828 TinkerGraph can supportPersistence(), should we allow it.
+* TINKERPOP-830 process-docs.sh introduces extra white space dependent on console width
+* TINKERPOP-839 Docs should have a ${version.number} under the logo.
+* TINKERPOP-852 A shell script that validates the distribution artifacts at release time
+* TINKERPOP-853 TinkerPop Logo in JavaDoc index.html
+* TINKERPOP-858 Cleanup after failed :install
+
+[[release-3-0-1-incubating]]
 TinkerPop 3.0.1 (Release Date: September 2, 2015)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -92,32 +1162,32 @@ TinkerPop 3.0.1 (Release Date: September 2, 2015)
 Bugs
 ^^^^
 
-* [TINKERPOP3-770] - Exception while AddPropertyStep tries to detach vertex property
-* [TINKERPOP3-780] - Use of fold() in repeat()
-* [TINKERPOP3-782] - map(Traversal) should declare requirements of child
-* [TINKERPOP3-785] - Gremlin Server Not Properly Reporting Port Conflict
-* [TINKERPOP3-792] - select at start of match traversal on Map can fail
-* [TINKERPOP3-794] - IncidentToAdjecentStrategy malfunction
-* [TINKERPOP3-804] - Failed installing neo4j-gremlin extension on Windows 7
-* [TINKERPOP3-822] - Neo4j GraphStep with element arguments ignores has  *(breaking)*
+* TINKERPOP-770 Exception while AddPropertyStep tries to detach vertex property
+* TINKERPOP-780 Use of fold() in repeat()
+* TINKERPOP-782 map(Traversal) should declare requirements of child
+* TINKERPOP-785 Gremlin Server Not Properly Reporting Port Conflict
+* TINKERPOP-792 select at start of match traversal on Map can fail
+* TINKERPOP-794 IncidentToAdjecentStrategy malfunction
+* TINKERPOP-804 Failed installing neo4j-gremlin extension on Windows 7
+* TINKERPOP-822 Neo4j GraphStep with element arguments ignores has  *(breaking)*
 
 Improvements
 ^^^^^^^^^^^^
 
-* [TINKERPOP3-576] - Gremlin Server Authentication
-* [TINKERPOP3-582] - Remove Groovy Sandbox Dependency
-* [TINKERPOP3-610] - General graph concept names in test schema
-* [TINKERPOP3-656] - IoRegistry Chaining
-* [TINKERPOP3-690] - Be able to OPT_OUT for Standard, but not Computer *(breaking)*
-* [TINKERPOP3-699] - GraphSON writeGraph not producing valid json object
-* [TINKERPOP3-750] - Compare should not have special case for Number
-* [TINKERPOP3-752] - Make Gremlin Server Better Respect ACCEPT
-* [TINKERPOP3-764] - Unify semantics of Transaction.close() in tests and documentation *(breaking)*
-* [TINKERPOP3-771] - IoRegistry Instantiation With GryoPool
-* [TINKERPOP3-778] - Support GraphFactory location via annotation.
-* [TINKERPOP3-791] - Document rules for committers
-* [TINKERPOP3-797] - order() seems to only like List? *(breaking)*
-* [TINKERPOP3-808] - TraversalComparator.comparator needs a getter
+* TINKERPOP-576 Gremlin Server Authentication
+* TINKERPOP-582 Remove Groovy Sandbox Dependency
+* TINKERPOP-610 General graph concept names in test schema
+* TINKERPOP-656 IoRegistry Chaining
+* TINKERPOP-690 Be able to OPT_OUT for Standard, but not Computer *(breaking)*
+* TINKERPOP-699 GraphSON writeGraph not producing valid json object
+* TINKERPOP-750 Compare should not have special case for Number
+* TINKERPOP-752 Make Gremlin Server Better Respect ACCEPT
+* TINKERPOP-764 Unify semantics of Transaction.close() in tests and documentation *(breaking)*
+* TINKERPOP-771 IoRegistry Instantiation With GryoPool
+* TINKERPOP-778 Support GraphFactory location via annotation.
+* TINKERPOP-791 Document rules for committers
+* TINKERPOP-797 order() seems to only like List? *(breaking)*
+* TINKERPOP-808 TraversalComparator.comparator needs a getter
 
 TinkerPop 3.0.0 (Release Date: July 9, 2015)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

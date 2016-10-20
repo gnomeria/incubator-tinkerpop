@@ -18,8 +18,8 @@
  */
 package org.apache.tinkerpop.gremlin.process.traversal.step.map
 
-import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalScriptHelper
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal
+import org.apache.tinkerpop.gremlin.process.traversal.util.ScriptTraversal
 import org.apache.tinkerpop.gremlin.structure.Vertex
 
 /**
@@ -31,12 +31,12 @@ public abstract class GroovyMeanTest {
 
         @Override
         public Traversal<Vertex, Double> get_g_V_age_mean() {
-            TraversalScriptHelper.compute("g.V.age.mean", g)
+            new ScriptTraversal<>(g, "gremlin-groovy", "g.V.age.mean")
         }
 
         @Override
-        public Traversal<Vertex, Map<String, Number>> get_g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_valuesXweightX_foldX_byXmeanXlocalXX() {
-            TraversalScriptHelper.compute("g.V().hasLabel('software').group().by('name').by(bothE().values('weight').fold()).by(mean(Scope.local))", g)
+        public Traversal<Vertex, Map<String, Number>> get_g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_weight_meanX() {
+            new ScriptTraversal<>(g, "gremlin-groovy", "g.V().hasLabel('software').group().by('name').by(bothE().weight.mean)")
         }
     }
 }

@@ -1,0 +1,12 @@
+**/*.log
+**/target
+*.iml
+.idea
+**/*.DS_Store
+.classpath
+.project
+.settings
+**/_bsp/
+docs/*.asciidoc
+Dockerfile
+.dockerignore

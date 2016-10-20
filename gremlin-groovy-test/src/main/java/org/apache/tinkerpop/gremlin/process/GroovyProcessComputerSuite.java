@@ -23,10 +23,9 @@ import org.apache.tinkerpop.gremlin.GraphManager;
 import org.apache.tinkerpop.gremlin.groovy.loaders.SugarLoader;
 import org.apache.tinkerpop.gremlin.groovy.util.SugarTestHelper;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
-import org.apache.tinkerpop.gremlin.process.computer.bulkloading.BulkLoaderVertexProgramTest;
-import org.apache.tinkerpop.gremlin.process.computer.ranking.PageRankVertexProgramTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.GroovyBranchTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.GroovyChooseTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.branch.GroovyOptionalTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.GroovyLocalTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.GroovyRepeatTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.GroovyUnionTest;
@@ -47,7 +46,9 @@ import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyAddEdgeTest
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyCoalesceTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyConstantTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyCountTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyFlatMapTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyFoldTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyGraphTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyLoopsTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyMapKeysTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyMapTest;
@@ -57,7 +58,12 @@ import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyMaxTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyMeanTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyMinTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyOrderTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyPageRankTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyPathTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyPeerPressureTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyProfileTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyProgramTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyProjectTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyPropertiesTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovySelectTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovySumTest;
@@ -65,10 +71,11 @@ import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyUnfoldTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyValueMapTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GroovyVertexTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovyAggregateTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovyExplainTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovyGroupCountTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovyGroupTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovyGroupTestV3d0;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovyInjectTest;
-import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovyProfileTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovySackTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovySideEffectCapTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroovySideEffectTest;
@@ -83,7 +90,7 @@ import org.junit.runners.model.RunnerBuilder;
 /**
  * The {@code GroovyProcessComputerSuite} is a JUnit test runner that executes the Gremlin Test Suite over a
  * {@link Graph} implementation.  This test suite covers traversal operations around {@link GraphComputer} and should
- * be implemented by vendors to validate that their implementations are compliant with the Groovy flavor of the
+ * be implemented by providers to validate that their implementations are compliant with the Groovy flavor of the
  * Gremlin language. Implementations that use this test suite should return {@code true} for
  * {@link Graph.Features.GraphFeatures#supportsComputer()}.
  * <p/>
@@ -102,6 +109,7 @@ public class GroovyProcessComputerSuite extends ProcessComputerSuite {
             //branch
             GroovyBranchTest.Traversals.class,
             GroovyChooseTest.Traversals.class,
+            GroovyOptionalTest.Traversals.class,
             GroovyLocalTest.Traversals.class,
             GroovyRepeatTest.Traversals.class,
             GroovyUnionTest.Traversals.class,
@@ -125,7 +133,9 @@ public class GroovyProcessComputerSuite extends ProcessComputerSuite {
             GroovyCoalesceTest.Traversals.class,
             GroovyConstantTest.Traversals.class,
             GroovyCountTest.Traversals.class,
+            GroovyFlatMapTest.Traversals.class,
             GroovyFoldTest.Traversals.class,
+            GroovyGraphTest.Traversals.class,
             GroovyLoopsTest.Traversals.class,
             GroovyMapTest.Traversals.class,
             GroovyMapKeysTest.Traversals.class,
@@ -136,7 +146,12 @@ public class GroovyProcessComputerSuite extends ProcessComputerSuite {
             GroovyMeanTest.Traversals.class,
             GroovyMinTest.Traversals.class,
             GroovyOrderTest.Traversals.class,
+            GroovyPageRankTest.Traversals.class,
             GroovyPathTest.Traversals.class,
+            // GroovyPeerPressureTest.Traversals.class, (ordering of ids in multi-threaded environments is non-deterministic)
+            GroovyProfileTest.Traversals.class,
+            GroovyProjectTest.Traversals.class,
+            GroovyProgramTest.Traversals.class,
             GroovyPropertiesTest.Traversals.class,
             GroovySelectTest.Traversals.class,
             GroovySumTest.Traversals.class,
@@ -147,7 +162,9 @@ public class GroovyProcessComputerSuite extends ProcessComputerSuite {
             // sideEffect
             GroovyAddEdgeTest.Traversals.class,
             GroovyAggregateTest.Traversals.class,
+            GroovyExplainTest.Traversals.class,
             GroovyGroupTest.Traversals.class,
+            GroovyGroupTestV3d0.Traversals.class,
             GroovyGroupCountTest.Traversals.class,
             GroovyInjectTest.Traversals.class,
             GroovyProfileTest.Traversals.class,
@@ -157,10 +174,6 @@ public class GroovyProcessComputerSuite extends ProcessComputerSuite {
             GroovyStoreTest.Traversals.class,
             GroovySubgraphTest.Traversals.class,
             GroovyTreeTest.Traversals.class,
-
-            // algorithms
-            PageRankVertexProgramTest.class,
-            BulkLoaderVertexProgramTest.class,
     };
 
     public GroovyProcessComputerSuite(final Class<?> klass, final RunnerBuilder builder) throws InitializationError {

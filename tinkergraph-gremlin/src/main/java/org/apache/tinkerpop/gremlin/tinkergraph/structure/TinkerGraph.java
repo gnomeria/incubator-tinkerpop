@@ -29,15 +29,20 @@ import org.apache.tinkerpop.gremlin.structure.Transaction;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.structure.io.Io;
+import org.apache.tinkerpop.gremlin.structure.io.IoCore;
 import org.apache.tinkerpop.gremlin.structure.util.ElementHelper;
 import org.apache.tinkerpop.gremlin.structure.util.GraphFactory;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
 import org.apache.tinkerpop.gremlin.tinkergraph.process.computer.TinkerGraphComputer;
 import org.apache.tinkerpop.gremlin.tinkergraph.process.computer.TinkerGraphComputerView;
 import org.apache.tinkerpop.gremlin.tinkergraph.process.traversal.strategy.optimization.TinkerGraphStepStrategy;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 
+import java.io.File;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -47,7 +52,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 /**
- * An in-sideEffects, reference implementation of the property graph interfaces provided by Gremlin3.
+ * An in-memory (with optional persistence on calls to {@link #close()}), reference implementation of the property
+ * graph interfaces provided by TinkerPop.
  *
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  * @author Stephen Mallette (http://stephen.genoprime.com)
@@ -63,6 +69,7 @@ import java.util.stream.Stream;
 @Graph.OptIn(Graph.OptIn.SUITE_GROOVY_ENVIRONMENT)
 @Graph.OptIn(Graph.OptIn.SUITE_GROOVY_ENVIRONMENT_INTEGRATE)
 @Graph.OptIn(Graph.OptIn.SUITE_GROOVY_ENVIRONMENT_PERFORMANCE)
+@Graph.OptIn("org.apache.tinkerpop.gremlin.tinkergraph.process.traversal.strategy.TinkerGraphStrategySuite")
 public final class TinkerGraph implements Graph {
 
     static {
@@ -73,10 +80,43 @@ public final class TinkerGraph implements Graph {
         this.setProperty(Graph.GRAPH, TinkerGraph.class.getName());
     }};
 
+    /**
+     * @deprecated As of release 3.1.0, replaced by {@link TinkerGraph#GREMLIN_TINKERGRAPH_VERTEX_ID_MANAGER}
+     */
+    @Deprecated
     public static final String CONFIG_VERTEX_ID = "gremlin.tinkergraph.vertexIdManager";
+    /**
+     * @deprecated As of release 3.1.0, replaced by {@link TinkerGraph#GREMLIN_TINKERGRAPH_EDGE_ID_MANAGER}
+     */
+    @Deprecated
     public static final String CONFIG_EDGE_ID = "gremlin.tinkergraph.edgeIdManager";
+    /**
+     * @deprecated As of release 3.1.0, replaced by {@link TinkerGraph#GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER}
+     */
+    @Deprecated
     public static final String CONFIG_VERTEX_PROPERTY_ID = "gremlin.tinkergraph.vertexPropertyIdManager";
+    /**
+     * @deprecated As of release 3.1.0, replaced by {@link TinkerGraph#GREMLIN_TINKERGRAPH_DEFAULT_VERTEX_PROPERTY_CARDINALITY}
+     */
+    @Deprecated
     public static final String CONFIG_DEFAULT_VERTEX_PROPERTY_CARDINALITY = "gremlin.tinkergraph.defaultVertexPropertyCardinality";
+    /**
+     * @deprecated As of release 3.1.0, replaced by {@link TinkerGraph#GREMLIN_TINKERGRAPH_GRAPH_LOCATION}
+     */
+    @Deprecated
+    public static final String CONFIG_GRAPH_LOCATION = "gremlin.tinkergraph.graphLocation";
+    /**
+     * @deprecated As of release 3.1.0, replaced by {@link TinkerGraph#GREMLIN_TINKERGRAPH_GRAPH_FORMAT}
+     */
+    @Deprecated
+    public static final String CONFIG_GRAPH_FORMAT = "gremlin.tinkergraph.graphFormat";
+    ///////
+    public static final String GREMLIN_TINKERGRAPH_VERTEX_ID_MANAGER = "gremlin.tinkergraph.vertexIdManager";
+    public static final String GREMLIN_TINKERGRAPH_EDGE_ID_MANAGER = "gremlin.tinkergraph.edgeIdManager";
+    public static final String GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER = "gremlin.tinkergraph.vertexPropertyIdManager";
+    public static final String GREMLIN_TINKERGRAPH_DEFAULT_VERTEX_PROPERTY_CARDINALITY = "gremlin.tinkergraph.defaultVertexPropertyCardinality";
+    public static final String GREMLIN_TINKERGRAPH_GRAPH_LOCATION = "gremlin.tinkergraph.graphLocation";
+    public static final String GREMLIN_TINKERGRAPH_GRAPH_FORMAT = "gremlin.tinkergraph.graphFormat";
 
     private final TinkerGraphFeatures features = new TinkerGraphFeatures();
 
@@ -95,17 +135,28 @@ public final class TinkerGraph implements Graph {
     protected final VertexProperty.Cardinality defaultVertexPropertyCardinality;
 
     private final Configuration configuration;
+    private final String graphLocation;
+    private final String graphFormat;
 
     /**
      * An empty private constructor that initializes {@link TinkerGraph}.
      */
     private TinkerGraph(final Configuration configuration) {
         this.configuration = configuration;
-        this.vertexIdManager = selectIdManager(configuration, CONFIG_VERTEX_ID, Vertex.class);
-        this.edgeIdManager = selectIdManager(configuration, CONFIG_EDGE_ID, Edge.class);
-        this.vertexPropertyIdManager = selectIdManager(configuration, CONFIG_VERTEX_PROPERTY_ID, VertexProperty.class);
-        this.defaultVertexPropertyCardinality = VertexProperty.Cardinality.valueOf(
-                configuration.getString(CONFIG_DEFAULT_VERTEX_PROPERTY_CARDINALITY, VertexProperty.Cardinality.single.name()));
+        vertexIdManager = selectIdManager(configuration, GREMLIN_TINKERGRAPH_VERTEX_ID_MANAGER, Vertex.class);
+        edgeIdManager = selectIdManager(configuration, GREMLIN_TINKERGRAPH_EDGE_ID_MANAGER, Edge.class);
+        vertexPropertyIdManager = selectIdManager(configuration, GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER, VertexProperty.class);
+        defaultVertexPropertyCardinality = VertexProperty.Cardinality.valueOf(
+                configuration.getString(GREMLIN_TINKERGRAPH_DEFAULT_VERTEX_PROPERTY_CARDINALITY, VertexProperty.Cardinality.single.name()));
+
+        graphLocation = configuration.getString(GREMLIN_TINKERGRAPH_GRAPH_LOCATION, null);
+        graphFormat = configuration.getString(GREMLIN_TINKERGRAPH_GRAPH_FORMAT, null);
+
+        if ((graphLocation != null && null == graphFormat) || (null == graphLocation && graphFormat != null))
+            throw new IllegalStateException(String.format("The %s and %s must both be specified if either is present",
+                    GREMLIN_TINKERGRAPH_GRAPH_LOCATION, GREMLIN_TINKERGRAPH_GRAPH_FORMAT));
+
+        if (graphLocation != null) loadGraph();
     }
 
     /**
@@ -180,7 +231,7 @@ public final class TinkerGraph implements Graph {
 
     @Override
     public <I extends Io> I io(final Io.Builder<I> builder) {
-        return (I) builder.graph(this).registry(TinkerIoRegistry.getInstance()).create();
+        return (I) builder.graph(this).onMapper(mapper -> mapper.addRegistry(TinkerIoRegistry.getInstance())).create();
     }
 
     @Override
@@ -200,6 +251,7 @@ public final class TinkerGraph implements Graph {
 
     @Override
     public void close() {
+        if (graphLocation != null) saveGraph();
     }
 
     @Override
@@ -222,31 +274,76 @@ public final class TinkerGraph implements Graph {
         return createElementIterator(Edge.class, edges, edgeIdManager, edgeIds);
     }
 
+    private void loadGraph() {
+        final File f = new File(graphLocation);
+        if (f.exists() && f.isFile()) {
+            try {
+                if (graphFormat.equals("graphml")) {
+                    io(IoCore.graphml()).readGraph(graphLocation);
+                } else if (graphFormat.equals("graphson")) {
+                    io(IoCore.graphson()).readGraph(graphLocation);
+                } else if (graphFormat.equals("gryo")) {
+                    io(IoCore.gryo()).readGraph(graphLocation);
+                } else {
+                    io(IoCore.createIoBuilder(graphFormat)).readGraph(graphLocation);
+                }
+            } catch (Exception ex) {
+                throw new RuntimeException(String.format("Could not load graph at %s with %s", graphLocation, graphFormat), ex);
+            }
+        }
+    }
+
+    private void saveGraph() {
+        final File f = new File(graphLocation);
+        if (f.exists()) {
+            f.delete();
+        } else {
+            final File parent = f.getParentFile();
+
+            // the parent would be null in the case of an relative path if the graphLocation was simply: "f.gryo"
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+        }
+
+        try {
+            if (graphFormat.equals("graphml")) {
+                io(IoCore.graphml()).writeGraph(graphLocation);
+            } else if (graphFormat.equals("graphson")) {
+                io(IoCore.graphson()).writeGraph(graphLocation);
+            } else if (graphFormat.equals("gryo")) {
+                io(IoCore.gryo()).writeGraph(graphLocation);
+            } else {
+                io(IoCore.createIoBuilder(graphFormat)).writeGraph(graphLocation);
+            }
+        } catch (Exception ex) {
+            throw new RuntimeException(String.format("Could not save graph at %s with %s", graphLocation, graphFormat), ex);
+        }
+    }
+
     private <T extends Element> Iterator<T> createElementIterator(final Class<T> clazz, final Map<Object, T> elements,
                                                                   final IdManager idManager,
                                                                   final Object... ids) {
+        final Iterator<T> iterator;
         if (0 == ids.length) {
-            return elements.values().iterator();
+            iterator = elements.values().iterator();
         } else {
-            // base the conversion function on the first item in the id list as the expectation is that these
-            // id values will be a uniform list
-            if (clazz.isAssignableFrom(ids[0].getClass())) {
-                // based on the first item assume all vertices in the argument list
-                if (!Stream.of(ids).allMatch(id -> clazz.isAssignableFrom(id.getClass())))
-                    throw Graph.Exceptions.idArgsMustBeEitherIdOrElement();
+            final List<Object> idList = Arrays.asList(ids);
+            validateHomogenousIds(idList);
 
-                // got a bunch of Elements - have to look each upup because it might be an Attachable instance or
-                // other implementation. the assumption is that id conversion is not required for detached
-                // stuff - doesn't seem likely someone would detach a Titan vertex then try to expect that
-                // vertex to be findable in OrientDB
-                return Stream.of(ids).map(id -> elements.get(((T) id).id())).filter(Objects::nonNull).iterator();
-            } else {
-                final Class<?> firstClass = ids[0].getClass();
-                if (!Stream.of(ids).map(Object::getClass).allMatch(firstClass::equals))
-                    throw Graph.Exceptions.idArgsMustBeEitherIdOrElement();
-                return Stream.of(ids).map(id -> idManager.convert(id)).map(elements::get).filter(Objects::nonNull).iterator();
-            }
+            // if the type is of Element - have to look each up because it might be an Attachable instance or
+            // other implementation. the assumption is that id conversion is not required for detached
+            // stuff - doesn't seem likely someone would detach a Titan vertex then try to expect that
+            // vertex to be findable in OrientDB
+            return clazz.isAssignableFrom(ids[0].getClass()) ?
+               IteratorUtils.filter(IteratorUtils.map(idList, id -> elements.get(clazz.cast(id).id())).iterator(), Objects::nonNull)
+                : IteratorUtils.filter(IteratorUtils.map(idList, id -> elements.get(idManager.convert(id))).iterator(), Objects::nonNull);
         }
+        return TinkerHelper.inComputerMode(this) ?
+                (Iterator<T>) (clazz.equals(Vertex.class) ?
+                        IteratorUtils.filter((Iterator<Vertex>) iterator, t -> this.graphComputerView.legalVertex(t)) :
+                        IteratorUtils.filter((Iterator<Edge>) iterator, t -> this.graphComputerView.legalEdge(t.outVertex(), t))) :
+                iterator;
     }
 
     /**
@@ -259,6 +356,19 @@ public final class TinkerGraph implements Graph {
     @Override
     public Features features() {
         return features;
+    }
+
+    private void validateHomogenousIds(final List<Object> ids) {
+        final Iterator<Object> iterator = ids.iterator();
+        Object id = iterator.next();
+        if (id == null)
+            throw Graph.Exceptions.idArgsMustBeEitherIdOrElement();
+        final Class firstClass = id.getClass();
+        while (iterator.hasNext()) {
+            id = iterator.next();
+            if (id == null || !id.getClass().equals(firstClass))
+                throw Graph.Exceptions.idArgsMustBeEitherIdOrElement();
+        }
     }
 
     public class TinkerGraphFeatures implements Features {
@@ -289,9 +399,11 @@ public final class TinkerGraph implements Graph {
         public String toString() {
             return StringFactory.featureString(this);
         }
+
     }
 
     public class TinkerGraphVertexFeatures implements Features.VertexFeatures {
+
         private final TinkerGraphVertexPropertyFeatures vertexPropertyFeatures = new TinkerGraphVertexPropertyFeatures();
 
         private TinkerGraphVertexFeatures() {
@@ -314,7 +426,6 @@ public final class TinkerGraph implements Graph {
 
         @Override
         public VertexProperty.Cardinality getCardinality(final String key) {
-            //return VertexProperty.Cardinality.single;
             return defaultVertexPropertyCardinality;
         }
     }
@@ -347,11 +458,6 @@ public final class TinkerGraph implements Graph {
 
         @Override
         public boolean supportsTransactions() {
-            return false;
-        }
-
-        @Override
-        public boolean supportsPersistence() {
             return false;
         }
 

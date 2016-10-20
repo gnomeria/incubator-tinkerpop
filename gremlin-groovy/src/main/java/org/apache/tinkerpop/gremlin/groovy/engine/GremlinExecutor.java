@@ -51,10 +51,10 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -225,6 +225,22 @@ public class GremlinExecutor implements AutoCloseable {
      */
     public CompletableFuture<Object> eval(final String script, final String language, final Bindings boundVars,
                                           final Function<Object, Object> transformResult, final Consumer<Object> withResult) {
+        final LifeCycle lifeCycle = LifeCycle.build()
+                .transformResult(transformResult)
+                .withResult(withResult).create();
+
+        return eval(script, language, boundVars, lifeCycle);
+    }
+
+    /**
+     * Evaluate a script and allow for the submission of alteration to the entire evaluation execution lifecycle.
+     *
+     * @param script the script to evaluate
+     * @param language the language to evaluate it in
+     * @param boundVars the bindings to evaluate in the context of the script
+     * @param lifeCycle a set of functions that can be applied at various stages of the evaluation process
+     */
+    public CompletableFuture<Object> eval(final String script, final String language, final Bindings boundVars,  final LifeCycle lifeCycle) {
         final String lang = Optional.ofNullable(language).orElse("gremlin-groovy");
 
         logger.debug("Preparing to evaluate script - {} - in thread [{}]", script, Thread.currentThread().getName());
@@ -232,11 +248,40 @@ public class GremlinExecutor implements AutoCloseable {
         final Bindings bindings = new SimpleBindings();
         bindings.putAll(globalBindings);
         bindings.putAll(boundVars);
-        beforeEval.accept(bindings);
+
+        // override the timeout if the lifecycle has a value assigned
+        final long scriptEvalTimeOut = lifeCycle.getScriptEvaluationTimeoutOverride().orElse(scriptEvaluationTimeout);
 
         final CompletableFuture<Object> evaluationFuture = new CompletableFuture<>();
-        final FutureTask<Void> f = new FutureTask<>(() -> {
+        final FutureTask<Void> evalFuture = new FutureTask<>(() -> {
+
+            if (scriptEvalTimeOut > 0) {
+                final Thread scriptEvalThread = Thread.currentThread();
+
+                logger.debug("Schedule timeout for script - {} - in thread [{}]", script, scriptEvalThread.getName());
+
+                // Schedule a timeout in the thread pool for future execution
+                final ScheduledFuture<?> sf = scheduledExecutorService.schedule(() -> {
+                    logger.warn("Timing out script - {} - in thread [{}]", script, Thread.currentThread().getName());
+                    if (!evaluationFuture.isDone()) scriptEvalThread.interrupt();
+                }, scriptEvalTimeOut, TimeUnit.MILLISECONDS);
+
+                // Cancel the scheduled timeout if the eval future is complete or the script evaluation failed
+                // with exception
+                evaluationFuture.handleAsync((v, t) -> {
+                    if (!sf.isDone()) {
+                        logger.debug("Killing scheduled timeout on script evaluation - {} - as the eval completed (possibly with exception).", script);
+                        sf.cancel(true);
+                    }
+
+                    // no return is necessary - nothing downstream is concerned with what happens in here
+                    return null;
+                }, scheduledExecutorService);
+            }
+
             try {
+                lifeCycle.getBeforeEval().orElse(beforeEval).accept(bindings);
+
                 logger.debug("Evaluating script - {} - in thread [{}]", script, Thread.currentThread().getName());
 
                 final Object o = scriptEngines.eval(script, bindings, lang);
@@ -244,25 +289,32 @@ public class GremlinExecutor implements AutoCloseable {
                 // apply a transformation before sending back the result - useful when trying to force serialization
                 // in the same thread that the eval took place given ThreadLocal nature of graphs as well as some
                 // transactional constraints
-                final Object result = null == transformResult ? o : transformResult.apply(o);
-                evaluationFuture.complete(result);
+                final Object result = lifeCycle.getTransformResult().isPresent() ?
+                        lifeCycle.getTransformResult().get().apply(o) : o;
 
                 // a mechanism for taking the final result and doing something with it in the same thread, but
                 // AFTER the eval and transform are done and that future completed.  this provides a final means
                 // for working with the result in the same thread as it was eval'd
-                if (withResult != null) withResult.accept(result);
+                if (lifeCycle.getWithResult().isPresent()) lifeCycle.getWithResult().get().accept(result);
 
-                afterSuccess.accept(bindings);
+                lifeCycle.getAfterSuccess().orElse(afterSuccess).accept(bindings);
+
+                // the evaluationFuture must be completed after all processing as an exception in lifecycle events
+                // that must raise as an exception to the caller who has the returned evaluationFuture. in other words,
+                // if it occurs before this point, then the handle() method won't be called again if there is an
+                // exception that ends up below trying to completeExceptionally()
+                evaluationFuture.complete(result);
             } catch (Throwable ex) {
                 final Throwable root = null == ex.getCause() ? ex : ExceptionUtils.getRootCause(ex);
 
                 // thread interruptions will typically come as the result of a timeout, so in those cases,
                 // check for that situation and convert to TimeoutException
-                if (root instanceof InterruptedException)
+                if (root instanceof InterruptedException) {
+                    lifeCycle.getAfterTimeout().orElse(afterTimeout).accept(bindings);
                     evaluationFuture.completeExceptionally(new TimeoutException(
-                            String.format("Script evaluation exceeded the configured threshold of %s ms for request [%s]: %s", scriptEvaluationTimeout, script, root.getMessage())));
-                else {
-                    afterFailure.accept(bindings, root);
+                            String.format("Script evaluation exceeded the configured 'scriptEvaluationTimeout' threshold of %s ms or evaluation was otherwise cancelled directly for request [%s]: %s", scriptEvalTimeOut, script, root.getMessage())));
+                } else {
+                    lifeCycle.getAfterFailure().orElse(afterFailure).accept(bindings, root);
                     evaluationFuture.completeExceptionally(root);
                 }
             }
@@ -270,25 +322,7 @@ public class GremlinExecutor implements AutoCloseable {
             return null;
         });
 
-        executorService.execute(f);
-
-        if (scriptEvaluationTimeout > 0) {
-            // Schedule a timeout in the thread pool for future execution
-            final ScheduledFuture<?> sf = scheduledExecutorService.schedule(() -> {
-                logger.warn("Timing out script - {} - in thread [{}]", script, Thread.currentThread().getName());
-                if (!f.isDone()) {
-                    afterTimeout.accept(bindings);
-                    f.cancel(true);
-                }
-            }, scriptEvaluationTimeout, TimeUnit.MILLISECONDS);
-
-            // Cancel the scheduled timeout if the eval future is complete or the script evaluation failed
-            // with exception
-            evaluationFuture.handleAsync((v, t) -> {
-                logger.debug("Killing scheduled timeout on script evaluation as the eval completed (possibly with exception).");
-                return sf.cancel(true);
-            });
-        }
+        executorService.execute(evalFuture);
 
         return evaluationFuture;
     }
@@ -468,7 +502,7 @@ public class GremlinExecutor implements AutoCloseable {
         private BiConsumer<Bindings, Throwable> afterFailure = (b, e) -> {
         };
         private List<List<String>> use = new ArrayList<>();
-        private Bindings globalBindings = new SimpleBindings();
+        private Bindings globalBindings = new org.apache.tinkerpop.gremlin.jsr223.ConcurrentBindings();
 
         private Builder() {
         }
@@ -495,10 +529,12 @@ public class GremlinExecutor implements AutoCloseable {
         }
 
         /**
-         * Bindings to apply to every script evaluated.
+         * Bindings to apply to every script evaluated. Note that the entries of the supplied {@code Bindings} object
+         * will be copied into a newly created {@link org.apache.tinkerpop.gremlin.jsr223.ConcurrentBindings} object
+         * at the call of this method.
          */
         public Builder globalBindings(final Bindings bindings) {
-            this.globalBindings = bindings;
+            this.globalBindings = new org.apache.tinkerpop.gremlin.jsr223.ConcurrentBindings(bindings);
             return this;
         }
 
@@ -516,7 +552,7 @@ public class GremlinExecutor implements AutoCloseable {
         }
 
         /**
-         * Replaces any settings provided by {@link #engineSettings(java.util.Map)}.
+         * Replaces any settings provided.
          */
         public Builder engineSettings(final Map<String, EngineSettings> settings) {
             this.settings = settings;
@@ -644,6 +680,144 @@ public class GremlinExecutor implements AutoCloseable {
 
         public Map<String, Object> getConfig() {
             return config;
+        }
+    }
+
+    /**
+     * The lifecycle of execution within the {@link #eval(String, String, Bindings, LifeCycle)} method. Since scripts
+     * are executed in a thread pool and graph transactions are bound to a thread all actions related to that script
+     * evaluation, both before and after that evaluation, need to be executed in the same thread.  This leads to a
+     * lifecycle of actions that can occur within that evaluation.  Note that some of these options can be globally
+     * set on the {@code GremlinExecutor} itself through the {@link GremlinExecutor.Builder}.  If specified here,
+     * they will override those global settings.
+     */
+    public static class LifeCycle {
+        private final Optional<Consumer<Bindings>> beforeEval;
+        private final Optional<Function<Object, Object>> transformResult;
+        private final Optional<Consumer<Object>> withResult;
+        private final Optional<Consumer<Bindings>> afterSuccess;
+        private final Optional<Consumer<Bindings>> afterTimeout;
+        private final Optional<BiConsumer<Bindings, Throwable>> afterFailure;
+        private final Optional<Long> scriptEvaluationTimeoutOverride;
+
+        private LifeCycle(final Builder builder) {
+            beforeEval = Optional.ofNullable(builder.beforeEval);
+            transformResult = Optional.ofNullable(builder.transformResult);
+            withResult = Optional.ofNullable(builder.withResult);
+            afterSuccess = Optional.ofNullable(builder.afterSuccess);
+            afterTimeout = Optional.ofNullable(builder.afterTimeout);
+            afterFailure = Optional.ofNullable(builder.afterFailure);
+            scriptEvaluationTimeoutOverride = Optional.ofNullable(builder.scriptEvaluationTimeoutOverride);
+        }
+
+        public Optional<Long> getScriptEvaluationTimeoutOverride() {
+            return scriptEvaluationTimeoutOverride;
+        }
+
+        public Optional<Consumer<Bindings>> getBeforeEval() {
+            return beforeEval;
+        }
+
+        public Optional<Function<Object, Object>> getTransformResult() {
+            return transformResult;
+        }
+
+        public Optional<Consumer<Object>> getWithResult() {
+            return withResult;
+        }
+
+        public Optional<Consumer<Bindings>> getAfterSuccess() {
+            return afterSuccess;
+        }
+
+        public Optional<Consumer<Bindings>> getAfterTimeout() {
+            return afterTimeout;
+        }
+
+        public Optional<BiConsumer<Bindings, Throwable>> getAfterFailure() {
+            return afterFailure;
+        }
+
+        public static Builder build() {
+            return new Builder();
+        }
+
+        public static class Builder {
+            private Consumer<Bindings> beforeEval = null;
+            private Function<Object, Object> transformResult = null;
+            private Consumer<Object> withResult = null;
+            private Consumer<Bindings> afterSuccess = null;
+            private Consumer<Bindings> afterTimeout = null;
+            private BiConsumer<Bindings, Throwable> afterFailure = null;
+            private Long scriptEvaluationTimeoutOverride = null;
+
+            /**
+             * Specifies the function to execute prior to the script being evaluated.  This function can also be
+             * specified globally on {@link GremlinExecutor.Builder#beforeEval(Consumer)}.
+             */
+            public Builder beforeEval(final Consumer<Bindings> beforeEval) {
+                this.beforeEval = beforeEval;
+                return this;
+            }
+
+            /**
+             * Specifies the function to execute on the result of the script evaluation just after script evaluation
+             * returns but before the script evaluation is marked as complete.
+             */
+            public Builder transformResult(final Function<Object, Object> transformResult) {
+                this.transformResult = transformResult;
+                return this;
+            }
+
+            /**
+             * Specifies the function to execute on the result of the script evaluation just after script evaluation
+             * returns but before the script evaluation is marked as complete.
+             */
+            public Builder withResult(final Consumer<Object> withResult) {
+                this.withResult = withResult;
+                return this;
+            }
+
+            /**
+             * Specifies the function to execute after result transformations.  This function can also be
+             * specified globally on {@link GremlinExecutor.Builder#afterSuccess(Consumer)}. The script evaluation
+             * will be marked as "complete" after this method.
+             */
+            public Builder afterSuccess(final Consumer<Bindings> afterSuccess) {
+                this.afterSuccess = afterSuccess;
+                return this;
+            }
+
+            /**
+             * Specifies the function to execute if the script evaluation times out.  This function can also be
+             * specified globally on {@link GremlinExecutor.Builder#afterTimeout(Consumer)}.
+             */
+            public Builder afterTimeout(final Consumer<Bindings> afterTimeout) {
+                this.afterTimeout = afterTimeout;
+                return this;
+            }
+
+            /**
+             * Specifies the function to execute if the script evaluation fails.  This function can also be
+             * specified globally on {@link GremlinExecutor.Builder#afterFailure(BiConsumer)}.
+             */
+            public Builder afterFailure(final BiConsumer<Bindings, Throwable> afterFailure) {
+                this.afterFailure = afterFailure;
+                return this;
+            }
+
+            /**
+             * An override to the global {@code scriptEvaluationTimeout} setting on the script engine. If this value
+             * is set to {@code null} (the default) it will use the global setting.
+             */
+            public Builder scriptEvaluationTimeoutOverride(final Long scriptEvaluationTimeoutOverride) {
+                this.scriptEvaluationTimeoutOverride = scriptEvaluationTimeoutOverride;
+                return this;
+            }
+
+            public LifeCycle create() {
+                return new LifeCycle(this);
+            }
         }
     }
 }

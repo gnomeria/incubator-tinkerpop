@@ -27,6 +27,8 @@ import org.apache.tinkerpop.gremlin.process.traversal.Scope;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
+import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalHelper;
+import org.apache.tinkerpop.gremlin.structure.Column;
 import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.junit.Test;
@@ -38,9 +40,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import static org.apache.tinkerpop.gremlin.LoadGraphWith.GraphData.GRATEFUL;
 import static org.apache.tinkerpop.gremlin.LoadGraphWith.GraphData.MODERN;
 import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.outE;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 
 /**
@@ -64,57 +70,62 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
 
     public abstract Traversal<Vertex, Map<String, Vertex>> get_g_V_asXaX_outXcreatedX_asXbX_order_byXshuffleX_selectXa_bX();
 
-    public abstract Traversal<Vertex, Map<Integer, Integer>> get_g_VX1X_hasXlabel_personX_mapXmapXint_ageXX_orderXlocalX_byXvalueDecrX_byXkeyIncrX(final Object v1Id);
+    public abstract Traversal<Vertex, Map<Integer, Integer>> get_g_VX1X_hasXlabel_personX_mapXmapXint_ageXX_orderXlocalX_byXvalues_decrX_byXkeys_incrX(final Object v1Id);
 
     public abstract Traversal<Vertex, Vertex> get_g_V_order_byXoutE_count__decrX();
 
-    public abstract Traversal<Vertex, Map<String, List<Vertex>>> get_g_V_group_byXlabelX_byXnameX_byXorderXlocalX_byXdecrXX();
+    public abstract Traversal<Vertex, Map<String, List<Vertex>>> get_g_V_group_byXlabelX_byXname_order_byXdecrX_foldX();
+
+    public abstract Traversal<Vertex, List<Double>> get_g_V_localXbothE_weight_foldX_order_byXsumXlocalX_decrX();
+
+    public abstract Traversal<Vertex, Map<String, Object>> get_g_V_asXvX_mapXbothE_weight_foldX_sumXlocalX_asXsX_selectXv_sX_order_byXselectXsX_decrX();
+
+    public abstract Traversal<Vertex, Vertex> get_g_V_hasLabelXpersonX_order_byXageX();
+
+    public abstract Traversal<Vertex, List<Vertex>> get_g_V_hasLabelXpersonX_fold_orderXlocalX_byXageX();
+
+    public abstract Traversal<Vertex, String> get_g_V_hasLabelXpersonX_order_byXvalueXageX__decrX_name();
+
+    public abstract Traversal<Vertex, String> get_g_V_properties_order_byXkey_decrX_key();
+
+    public abstract Traversal<Vertex, Vertex> get_g_V_hasXsong_name_OHBOYX_outXfollowedByX_outXfollowedByX_order_byXperformancesX_byXsongType_incrX();
+
+    public abstract Traversal<Vertex, String> get_g_V_both_hasLabelXpersonX_order_byXage_decrX_limitX5X_name();
+
+    public abstract Traversal<Vertex, String> get_g_V_both_hasLabelXpersonX_order_byXage_decrX_name();
+
+    public abstract Traversal<Vertex, String> get_g_V_hasLabelXsongX_order_byXperfomances_decrX_byXnameX_rangeX110_120X_name();
 
     @Test
     @LoadGraphWith(MODERN)
     public void g_V_name_order() {
         final Traversal<Vertex, String> traversal = get_g_V_name_order();
         printTraversalForm(traversal);
-        final List<String> names = traversal.toList();
-        assertEquals(names.size(), 6);
-        assertEquals("josh", names.get(0));
-        assertEquals("lop", names.get(1));
-        assertEquals("marko", names.get(2));
-        assertEquals("peter", names.get(3));
-        assertEquals("ripple", names.get(4));
-        assertEquals("vadas", names.get(5));
+        checkOrderedResults(Arrays.asList("josh", "lop", "marko", "peter", "ripple", "vadas"), traversal);
     }
 
     @Test
     @LoadGraphWith(MODERN)
-    @IgnoreEngine(TraversalEngine.Type.COMPUTER)
     public void g_V_name_order_byXa1_b1X_byXb2_a2X() {
         final Traversal<Vertex, String> traversal = get_g_V_name_order_byXa1_b1X_byXb2_a2X();
         printTraversalForm(traversal);
-        final List<String> names = traversal.toList();
-        assertEquals(names.size(), 6);
-        assertEquals("marko", names.get(0));
-        assertEquals("vadas", names.get(1));
-        assertEquals("peter", names.get(2));
-        assertEquals("ripple", names.get(3));
-        assertEquals("josh", names.get(4));
-        assertEquals("lop", names.get(5));
+        checkOrderedResults(Arrays.asList("marko", "vadas", "peter", "ripple", "josh", "lop"), traversal);
     }
 
     @Test
     @LoadGraphWith(MODERN)
     public void g_V_order_byXname_incrX_name() {
-        Arrays.asList(get_g_V_order_byXname_incrX_name(), get_g_V_order_byXnameX_name()).forEach(traversal -> {
-            printTraversalForm(traversal);
-            final List<String> names = traversal.toList();
-            assertEquals(names.size(), 6);
-            assertEquals("josh", names.get(0));
-            assertEquals("lop", names.get(1));
-            assertEquals("marko", names.get(2));
-            assertEquals("peter", names.get(3));
-            assertEquals("ripple", names.get(4));
-            assertEquals("vadas", names.get(5));
-        });
+        final Traversal<Vertex, String> traversal = get_g_V_order_byXname_incrX_name();
+        printTraversalForm(traversal);
+        checkOrderedResults(Arrays.asList("josh", "lop", "marko", "peter", "ripple", "vadas"), traversal);
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_order_byXnameX_name() {
+        final Traversal<Vertex, String> traversal = get_g_V_order_byXnameX_name();
+        printTraversalForm(traversal);
+        checkOrderedResults(Arrays.asList("josh", "lop", "marko", "peter", "ripple", "vadas"), traversal);
     }
 
     @Test
@@ -122,15 +133,7 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
     public void g_V_outE_order_byXweight_decrX_weight() {
         final Traversal<Vertex, Double> traversal = get_g_V_outE_order_byXweight_decrX_weight();
         printTraversalForm(traversal);
-        final List<Double> weights = traversal.toList();
-        assertEquals(6, weights.size());
-        assertEquals(Double.valueOf(1.0d), weights.get(0));
-        assertEquals(Double.valueOf(1.0d), weights.get(1));
-        assertEquals(Double.valueOf(0.5d), weights.get(2));
-        assertEquals(Double.valueOf(0.4d), weights.get(3));
-        assertEquals(Double.valueOf(0.4d), weights.get(4));
-        assertEquals(Double.valueOf(0.2d), weights.get(5));
-
+        checkOrderedResults(Arrays.asList(1.0d, 1.0d, 0.5d, 0.4d, 0.4d, 0.2d), traversal);
     }
 
     @Test
@@ -138,14 +141,7 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
     public void g_V_order_byXname_a1_b1X_byXname_b2_a2X_name() {
         final Traversal<Vertex, String> traversal = get_g_V_order_byXname_a1_b1X_byXname_b2_a2X_name();
         printTraversalForm(traversal);
-        final List<String> names = traversal.toList();
-        assertEquals(names.size(), 6);
-        assertEquals("marko", names.get(0));
-        assertEquals("vadas", names.get(1));
-        assertEquals("peter", names.get(2));
-        assertEquals("ripple", names.get(3));
-        assertEquals("josh", names.get(4));
-        assertEquals("lop", names.get(5));
+        checkOrderedResults(Arrays.asList("marko", "vadas", "peter", "ripple", "josh", "lop"), traversal);
     }
 
     @Test
@@ -183,8 +179,8 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
 
     @Test
     @LoadGraphWith(MODERN)
-    public void g_VX1X_hasXlabel_personX_mapXmapXint_ageXX_orderXlocalX_byXvalueDecrX_byXkeyIncrX() {
-        final Traversal<Vertex, Map<Integer, Integer>> traversal = get_g_VX1X_hasXlabel_personX_mapXmapXint_ageXX_orderXlocalX_byXvalueDecrX_byXkeyIncrX(convertToVertexId("marko"));
+    public void g_VX1X_hasXlabel_personX_mapXmapXint_ageXX_orderXlocalX_byXvalues_decrX_byXkeys_incrX() {
+        final Traversal<Vertex, Map<Integer, Integer>> traversal = get_g_VX1X_hasXlabel_personX_mapXmapXint_ageXX_orderXlocalX_byXvalues_decrX_byXkeys_incrX(convertToVertexId("marko"));
         printTraversalForm(traversal);
         final Map<Integer, Integer> map = traversal.next();
         assertFalse(traversal.hasNext());
@@ -224,8 +220,8 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
 
     @Test
     @LoadGraphWith(MODERN)
-    public void g_V_group_byXlabelX_byXnameX_byXorderXlocalX_byXdecrXX() {
-        final Traversal<Vertex, Map<String, List<Vertex>>> traversal = get_g_V_group_byXlabelX_byXnameX_byXorderXlocalX_byXdecrXX();
+    public void g_V_group_byXlabelX_byXname_order_byXdecrX_foldX() {
+        final Traversal<Vertex, Map<String, List<Vertex>>> traversal = get_g_V_group_byXlabelX_byXname_order_byXdecrX_foldX();
         printTraversalForm(traversal);
         final Map<String, List<Vertex>> map = traversal.next();
         assertFalse(traversal.hasNext());
@@ -240,6 +236,142 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
         assertEquals("marko", list.get(2));
         assertEquals("peter", list.get(1));
         assertEquals("vadas", list.get(0));
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_localXbothE_weight_foldX_order_byXsumXlocalX_decrX() {
+        final Traversal<Vertex, List<Double>> traversal = get_g_V_localXbothE_weight_foldX_order_byXsumXlocalX_decrX();
+        final List<List<Double>> list = traversal.toList();
+        assertEquals(list.get(0).size(), 3);
+        assertEquals(list.get(1).size(), 3);
+        //assertEquals(list.get(2).size(),3);  // they both have value 1.0 and thus can't guarantee a tie order
+        //assertEquals(list.get(3).size(),1);
+        assertEquals(list.get(4).size(), 1);
+        assertEquals(list.get(5).size(), 1);
+        ///
+        assertEquals(2.4d, list.get(0).stream().reduce(0.0d, (a, b) -> a + b), 0.01d);
+        assertEquals(1.9d, list.get(1).stream().reduce(0.0d, (a, b) -> a + b), 0.01d);
+        assertEquals(1.0d, list.get(2).stream().reduce(0.0d, (a, b) -> a + b), 0.01d);
+        assertEquals(1.0d, list.get(3).stream().reduce(0.0d, (a, b) -> a + b), 0.01d);
+        assertEquals(0.5d, list.get(4).stream().reduce(0.0d, (a, b) -> a + b), 0.01d);
+        assertEquals(0.2d, list.get(5).stream().reduce(0.0d, (a, b) -> a + b), 0.01d);
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_asXvX_mapXbothE_weight_foldX_sumXlocalX_asXsX_selectXv_sX_order_byXselectXsX_decrX() {
+        final Traversal<Vertex, Map<String, Object>> traversal = get_g_V_asXvX_mapXbothE_weight_foldX_sumXlocalX_asXsX_selectXv_sX_order_byXselectXsX_decrX();
+        final List<Map<String, Object>> list = traversal.toList();
+        assertEquals(convertToVertex(graph, "josh"), list.get(0).get("v"));
+        assertEquals(2.4d, (Double) list.get(0).get("s"), 0.1d);
+        ///
+        assertEquals(convertToVertex(graph, "marko"), list.get(1).get("v"));
+        assertEquals(1.9d, (Double) list.get(1).get("s"), 0.1d);
+        //
+        assertEquals(1.0d, (Double) list.get(2).get("s"), 0.1d);   // they both have 1.0 so you can't test the "v" as().
+        assertEquals(1.0d, (Double) list.get(3).get("s"), 0.1d);
+        ///
+        assertEquals(convertToVertex(graph, "vadas"), list.get(4).get("v"));
+        assertEquals(0.5d, (Double) list.get(4).get("s"), 0.1d);
+        ///
+        assertEquals(convertToVertex(graph, "peter"), list.get(5).get("v"));
+        assertEquals(0.2d, (Double) list.get(5).get("s"), 0.1d);
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_hasLabelXpersonX_order_byXageX() {
+        final Traversal<Vertex, Vertex> traversal = get_g_V_hasLabelXpersonX_order_byXageX();
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList(convertToVertex(graph, "vadas"), convertToVertex(graph, "marko"), convertToVertex(graph, "josh"), convertToVertex(graph, "peter")), traversal);
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_hasLabelXpersonX_fold_orderXlocalX_byXageX() {
+        final Traversal<Vertex, List<Vertex>> traversal = get_g_V_hasLabelXpersonX_fold_orderXlocalX_byXageX();
+        printTraversalForm(traversal);
+        final List<Vertex> list = traversal.next();
+        assertEquals(convertToVertex(graph, "vadas"), list.get(0));
+        assertEquals(convertToVertex(graph, "marko"), list.get(1));
+        assertEquals(convertToVertex(graph, "josh"), list.get(2));
+        assertEquals(convertToVertex(graph, "peter"), list.get(3));
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_hasLabelXpersonX_order_byXvalueXageX__decrX_name() {
+        final Traversal<Vertex, String> traversal = get_g_V_hasLabelXpersonX_order_byXvalueXageX__decrX_name();
+        printTraversalForm(traversal);
+        checkOrderedResults(Arrays.asList("peter", "josh", "marko", "vadas"), traversal);
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_properties_order_byXkey_decrX_key() {
+        final Traversal<Vertex, String> traversal = get_g_V_properties_order_byXkey_decrX_key();
+        printTraversalForm(traversal);
+        checkOrderedResults(Arrays.asList(
+                "name", "name", "name", "name", "name", "name",
+                "lang", "lang",
+                "age", "age", "age", "age"), traversal);
+    }
+
+    @Test
+    @LoadGraphWith(GRATEFUL)
+    public void g_V_hasXsong_name_OHBOYX_outXfollowedByX_outXfollowedByX_order_byXperformancesX_byXsongType_incrX() {
+        final Traversal<Vertex, Vertex> traversal = get_g_V_hasXsong_name_OHBOYX_outXfollowedByX_outXfollowedByX_order_byXperformancesX_byXsongType_incrX();
+        printTraversalForm(traversal);
+        int counter = 0;
+        String lastSongType = "a";
+        int lastPerformances = Integer.MIN_VALUE;
+        while (traversal.hasNext()) {
+            final Vertex vertex = traversal.next();
+            final String currentSongType = vertex.value("songType");
+            final int currentPerformances = vertex.value("performances");
+            assertTrue(currentPerformances == lastPerformances || currentPerformances > lastPerformances);
+            if (currentPerformances == lastPerformances)
+                assertTrue(currentSongType.equals(lastSongType) || currentSongType.compareTo(lastSongType) < 0);
+            lastSongType = currentSongType;
+            lastPerformances = currentPerformances;
+            counter++;
+        }
+        assertEquals(144, counter);
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_both_hasLabelXpersonX_order_byXage_decrX_limitX5X_name() {
+        final Traversal<Vertex, String> traversal = get_g_V_both_hasLabelXpersonX_order_byXage_decrX_limitX5X_name();
+        printTraversalForm(traversal);
+        checkOrderedResults(Arrays.asList("peter", "josh", "josh", "josh", "marko"), traversal);
+    }
+
+    @Test
+    @IgnoreEngine(TraversalEngine.Type.STANDARD) // validating the internal sort/limit works in GraphComputer
+    @LoadGraphWith(MODERN)
+    public void g_V_both_hasLabelXpersonX_order_byXage_decrX_name() {
+        final Traversal<Vertex, String> traversal = get_g_V_both_hasLabelXpersonX_order_byXage_decrX_name();
+        traversal.asAdmin().applyStrategies();
+        if (!TraversalHelper.getFirstStepOfAssignableClass(OrderGlobalStep.class, traversal.asAdmin()).isPresent())
+            return; // total hack to avoid providers that don't compile to OrderGlobalStep
+        TraversalHelper.getFirstStepOfAssignableClass(OrderGlobalStep.class, traversal.asAdmin()).get().setLimit(1);
+        printTraversalForm(traversal);
+        final List<String> results = traversal.toList();
+        assertTrue(results.size() < 8);
+        assertFalse(traversal.hasNext());
+    }
+
+    @Test
+    @LoadGraphWith(GRATEFUL)
+    public void g_V_hasLabelXsongX_order_byXperfomances_decrX_byXnameX_rangeX110_120X_name() {
+        final Traversal<Vertex, String> traversal = get_g_V_hasLabelXsongX_order_byXperfomances_decrX_byXnameX_rangeX110_120X_name();
+        printTraversalForm(traversal);
+        checkOrderedResults(Arrays.asList(
+                "WANG DANG DOODLE", "THE ELEVEN", "WAY TO GO HOME", "FOOLISH HEART",
+                "GIMME SOME LOVING", "DUPREES DIAMOND BLUES", "CORRINA", "PICASSO MOON",
+                "KNOCKING ON HEAVENS DOOR", "MEMPHIS BLUES"), traversal);
     }
 
     public static class Traversals extends OrderTest {
@@ -261,7 +393,7 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
 
         @Override
         public Traversal<Vertex, String> get_g_V_order_byXnameX_name() {
-            return g.V().order().by("name", Order.incr).values("name");
+            return g.V().order().by("name").values("name");
         }
 
         @Override
@@ -282,15 +414,15 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
         }
 
         @Override
-        public Traversal<Vertex, Map<Integer, Integer>> get_g_VX1X_hasXlabel_personX_mapXmapXint_ageXX_orderXlocalX_byXvalueDecrX_byXkeyIncrX(final Object v1Id) {
-            return g.V(v1Id).map(v -> {
+        public Traversal<Vertex, Map<Integer, Integer>> get_g_VX1X_hasXlabel_personX_mapXmapXint_ageXX_orderXlocalX_byXvalues_decrX_byXkeys_incrX(final Object v1Id) {
+            return g.V(v1Id).hasLabel("person").map(v -> {
                 final Map<Integer, Integer> map = new HashMap<>();
                 map.put(1, (int) v.get().value("age"));
                 map.put(2, (int) v.get().value("age") * 2);
                 map.put(3, (int) v.get().value("age") * 3);
                 map.put(4, (int) v.get().value("age"));
                 return map;
-            }).order(Scope.local).by(Order.valueDecr).by(Order.keyIncr);
+            }).order(Scope.local).by(Column.values, Order.decr).by(Column.keys, Order.incr);
         }
 
         @Override
@@ -299,9 +431,58 @@ public abstract class OrderTest extends AbstractGremlinProcessTest {
         }
 
         @Override
-        public Traversal<Vertex, Map<String, List<Vertex>>> get_g_V_group_byXlabelX_byXnameX_byXorderXlocalX_byXdecrXX() {
-            return g.V().<String, List<Vertex>>group().by(T.label).by("name").by(__.order(Scope.local).by(Order.decr));
+        public Traversal<Vertex, Map<String, List<Vertex>>> get_g_V_group_byXlabelX_byXname_order_byXdecrX_foldX() {
+            return g.V().<String, List<Vertex>>group().by(T.label).by(__.values("name").order().by(Order.decr).fold());
         }
 
+        @Override
+        public Traversal<Vertex, List<Double>> get_g_V_localXbothE_weight_foldX_order_byXsumXlocalX_decrX() {
+            return g.V().local(__.bothE().<Double>values("weight").fold()).order().by(__.sum(Scope.local), Order.decr);
+        }
+
+        @Override
+        public Traversal<Vertex, Map<String, Object>> get_g_V_asXvX_mapXbothE_weight_foldX_sumXlocalX_asXsX_selectXv_sX_order_byXselectXsX_decrX() {
+            return g.V().as("v").map(__.bothE().<Double>values("weight").fold()).sum(Scope.local).as("s").select("v", "s").order().by(__.select("s"), Order.decr);
+        }
+
+        @Override
+        public Traversal<Vertex, Vertex> get_g_V_hasLabelXpersonX_order_byXageX() {
+            return g.V().hasLabel("person").order().by("age");
+        }
+
+        @Override
+        public Traversal<Vertex, List<Vertex>> get_g_V_hasLabelXpersonX_fold_orderXlocalX_byXageX() {
+            return g.V().hasLabel("person").fold().order(Scope.local).by("age");
+        }
+
+        @Override
+        public Traversal<Vertex, String> get_g_V_hasLabelXpersonX_order_byXvalueXageX__decrX_name() {
+            return g.V().hasLabel("person").order().<Vertex>by(v -> v.value("age"), Order.decr).values("name");
+        }
+
+        @Override
+        public Traversal<Vertex, String> get_g_V_properties_order_byXkey_decrX_key() {
+            return g.V().properties().order().by(T.key, Order.decr).key();
+        }
+
+        @Override
+        public Traversal<Vertex, Vertex> get_g_V_hasXsong_name_OHBOYX_outXfollowedByX_outXfollowedByX_order_byXperformancesX_byXsongType_incrX() {
+            return g.V().has("song", "name", "OH BOY").out("followedBy").out("followedBy").order().by("performances").by("songType", Order.decr);
+        }
+
+        @Override
+        public Traversal<Vertex, String> get_g_V_both_hasLabelXpersonX_order_byXage_decrX_limitX5X_name() {
+            return g.V().both().hasLabel("person").order().by("age", Order.decr).limit(5).values("name");
+        }
+
+        @Override
+        public Traversal<Vertex, String> get_g_V_both_hasLabelXpersonX_order_byXage_decrX_name() {
+            return g.V().both().hasLabel("person").order().by("age", Order.decr).values("name");
+        }
+
+        @Override
+        public Traversal<Vertex, String> get_g_V_hasLabelXsongX_order_byXperfomances_decrX_byXnameX_rangeX110_120X_name() {
+            return g.V().hasLabel("song").order().by("performances", Order.decr).by("name").range(110, 120).values("name");
+        }
     }
 }

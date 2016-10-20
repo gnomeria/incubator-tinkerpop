@@ -20,11 +20,10 @@ package org.apache.tinkerpop.gremlin.structure;
 
 import org.apache.commons.configuration.Configuration;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
+import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
-import org.apache.tinkerpop.gremlin.process.traversal.engine.ComputerTraversalEngine;
-import org.apache.tinkerpop.gremlin.process.traversal.engine.StandardTraversalEngine;
 import org.apache.tinkerpop.gremlin.structure.io.Io;
 import org.apache.tinkerpop.gremlin.structure.io.IoRegistry;
 import org.apache.tinkerpop.gremlin.structure.util.FeatureDescriptor;
@@ -64,7 +63,7 @@ public interface Graph extends AutoCloseable, Host {
     public static final String GRAPH = "gremlin.graph";
 
     /**
-     * This should only be used by vendors to create keys, labels, etc. in a namespace safe from users.
+     * This should only be used by providers to create keys, labels, etc. in a namespace safe from users.
      * Users are not allowed to generate property keys, step labels, etc. that are key'd "hidden".
      */
     public static class Hidden {
@@ -136,59 +135,101 @@ public interface Graph extends AutoCloseable, Host {
      */
     public <C extends GraphComputer> C compute(final Class<C> graphComputerClass) throws IllegalArgumentException;
 
+    /**
+     * Generate a {@link GraphComputer} using the default engine of the underlying graph system.
+     * This is a shorthand method for the more involved method that uses {@link Graph#compute(Class)}.
+     *
+     * @return A default graph computer
+     * @throws IllegalArgumentException if there is no default graph computer
+     */
     public GraphComputer compute() throws IllegalArgumentException;
 
+    /**
+     * Generate a {@link TraversalSource} using the specified {@code TraversalSource} class.
+     * The reusable {@link TraversalSource} provides methods for spawning {@link Traversal} instances.
+     *
+     * @param traversalSourceClass The traversal source class
+     * @param <C>                  The traversal source class
+     */
+    public default <C extends TraversalSource> C traversal(final Class<C> traversalSourceClass) {
+        try {
+            return traversalSourceClass.getConstructor(Graph.class).newInstance(this);
+        } catch (final Exception e) {
+            throw new IllegalStateException(e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Generate a {@link TraversalSource} using the specified {@code TraversalSource.Builder}.
+     * The reusable {@link TraversalSource} provides methods for spawning {@link Traversal} instances.
+     *
+     * @param sourceBuilder The traversal source builder to use
+     * @param <C>           The traversal source class
+     * @deprecated As of release 3.2.0. Please use {@link Graph#traversal(Class)}.
+     */
+    @Deprecated
     public default <C extends TraversalSource> C traversal(final TraversalSource.Builder<C> sourceBuilder) {
         return sourceBuilder.create(this);
     }
 
+    /**
+     * Generate a reusable {@link GraphTraversalSource} instance.
+     * The {@link GraphTraversalSource} provides methods for creating
+     * {@link org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal} instances.
+     *
+     * @return A graph traversal source
+     */
     public default GraphTraversalSource traversal() {
-        return this.traversal(GraphTraversalSource.build().engine(StandardTraversalEngine.build()));
+        return new GraphTraversalSource(this);
     }
 
     /**
-     * Get the {@link Vertex} objects in this graph with the provided vertex ids. If no ids are provided, get all
-     * vertices.  Note that a vertex identifier does not need to correspond to the actual id used in the graph.  It
-     * needs to be a bit more flexible than that in that given the {@link Graph.Features} around id support, multiple
-     * arguments might be applicable here.
+     * Get the {@link Vertex} objects in this graph with the provided vertex ids or {@link Vertex} objects themselves.
+     * If no ids are provided, get all vertices.  Note that a vertex identifier does not need to correspond to the
+     * actual id used in the graph.  It needs to be a bit more flexible than that in that given the
+     * {@link Graph.Features} around id support, multiple arguments might be applicable here.
      * <p/>
      * If the graph return {@code true} for {@link Features.VertexFeatures#supportsNumericIds()} then it should support
      * filters as with:
      * <ul>
-     *     <li>g.vertices(v.id())</li>
-     *     <li>g.vertices(1)</li>
-     *     <li>g.vertices(1L)</li>
-     *     <li>g.vertices(1.0d)</li>
-     *     <li>g.vertices(1.0f)</li>
-     *     <li>g.vertices("1")</li>
+     * <li>g.vertices(v)</li>
+     * <li>g.vertices(v.id())</li>
+     * <li>g.vertices(1)</li>
+     * <li>g.vertices(1L)</li>
+     * <li>g.vertices(1.0d)</li>
+     * <li>g.vertices(1.0f)</li>
+     * <li>g.vertices("1")</li>
      * </ul>
      * <p/>
      * If the graph return {@code true} for {@link Features.VertexFeatures#supportsCustomIds()} ()} then it should support
      * filters as with:
      * <ul>
-     *     <li>g.vertices(v.id())</li>
-     *     <li>g.vertices(v.id().toString())</li>
+     * <li>g.vertices(v)</li>
+     * <li>g.vertices(v.id())</li>
+     * <li>g.vertices(v.id().toString())</li>
      * </ul>
      * <p/>
      * If the graph return {@code true} for {@link Features.VertexFeatures#supportsAnyIds()} ()} then it should support
      * filters as with:
      * <ul>
-     *     <li>g.vertices(v.id())</li>
+     * <li>g.vertices(v)</li>
+     * <li>g.vertices(v.id())</li>
      * </ul>
      * <p/>                                                                                                         
      * If the graph return {@code true} for {@link Features.VertexFeatures#supportsStringIds()} ()} then it should support
      * filters as with:
      * <ul>
-     *     <li>g.vertices(v)</li>
-     *     <li>g.vertices(v.id().toString())</li>
-     *     <li>g.vertices("id")</li>
+     * <li>g.vertices(v)</li>
+     * <li>g.vertices(v.id().toString())</li>
+     * <li>g.vertices("id")</li>
      * </ul>
      * <p/>
      * If the graph return {@code true} for {@link Features.EdgeFeatures#supportsStringIds()} ()} then it should support
      * filters as with:
      * <ul>
-     *     <li>g.vertices(v.id().toString())</li>
-     *     <li>g.vertices("id")</li>
+     * <li>g.vertices(v)</li>
+     * <li>g.vertices(v.id().toString())</li>
+     * <li>g.vertices("id")</li>
      * </ul>
      *
      * @param vertexIds the ids of the vertices to get
@@ -197,40 +238,44 @@ public interface Graph extends AutoCloseable, Host {
     public Iterator<Vertex> vertices(final Object... vertexIds);
 
     /**
-     * Get the {@link Edge} objects in this graph with the provided edge ids. If no ids are provided, get all edges.
-     * Note that an edge identifier does not need to correspond to the actual id used in the graph.  It
-     * needs to be a bit more flexible than that in that given the {@link Graph.Features} around id support, multiple
-     * arguments might be applicable here.
+     * Get the {@link Edge} objects in this graph with the provided edge ids or {@link Edge} objects. If no ids are
+     * provided, get all edges. Note that an edge identifier does not need to correspond to the actual id used in the
+     * graph.  It needs to be a bit more flexible than that in that given the {@link Graph.Features} around id support,
+     * multiple arguments might be applicable here.
      * <p/>
      * If the graph return {@code true} for {@link Features.EdgeFeatures#supportsNumericIds()} then it should support
      * filters as with:
      * <ul>
-     *     <li>g.edges(e.id())</li>
-     *     <li>g.edges(1)</li>
-     *     <li>g.edges(1L)</li>
-     *     <li>g.edges(1.0d)</li>
-     *     <li>g.edges(1.0f)</li>
-     *     <li>g.edges("1")</li>
+     * <li>g.edges(e)</li>
+     * <li>g.edges(e.id())</li>
+     * <li>g.edges(1)</li>
+     * <li>g.edges(1L)</li>
+     * <li>g.edges(1.0d)</li>
+     * <li>g.edges(1.0f)</li>
+     * <li>g.edges("1")</li>
      * </ul>
      * <p/>
      * If the graph return {@code true} for {@link Features.EdgeFeatures#supportsCustomIds()} ()} then it should support
      * filters as with:
-     * <ul>\
-     *     <li>g.edges(e.id())</li>
-     *     <li>g.edges(e.id().toString())</li>
+     * <ul>
+     * <li>g.edges(e)</li>
+     * <li>g.edges(e.id())</li>
+     * <li>g.edges(e.id().toString())</li>
      * </ul>
      * <p/>
      * If the graph return {@code true} for {@link Features.EdgeFeatures#supportsAnyIds()} ()} then it should support
      * filters as with:
      * <ul>
-     *     <li>g.edges(e.id())</li>
+     * <li>g.edges(e)</li>
+     * <li>g.edges(e.id())</li>
      * </ul>
      * <p/>
      * If the graph return {@code true} for {@link Features.EdgeFeatures#supportsStringIds()} ()} then it should support
      * filters as with:
      * <ul>
-     *     <li>g.edges(e.id().toString())</li>
-     *     <li>g.edges("id")</li>
+     * <li>g.edges(e)</li>
+     * <li>g.edges(e.id().toString())</li>
+     * <li>g.edges("id")</li>
      * </ul>
      *
      * @param edgeIds the ids of the edges to get
@@ -258,14 +303,15 @@ public interface Graph extends AutoCloseable, Host {
 
     /**
      * Construct a particular {@link Io} implementation for reading and writing the {@code Graph} and other data.
-     * End-users will "select" the {@link Io} implementation that they want to use by supplying the {@link Io.Builder}
-     * that constructs it.  In this way, {@code Graph} vendors can supply their {@link IoRegistry} to that builder
-     * thus allowing for custom serializers to be auto-configured into the {@link Io} instance.  Registering custom
-     * serializers is particularly useful for those graphs that have complex types for {@link Element} identifiers.
-     * </br>
+     * End-users will "select" the {@link Io} implementation that they want to use by supplying the
+     * {@link org.apache.tinkerpop.gremlin.structure.io.Io.Builder} that constructs it.  In this way, {@code Graph}
+     * vendors can supply their {@link IoRegistry} to that builder thus allowing for custom serializers to be
+     * auto-configured into the {@link Io} instance.  Registering custom serializers is particularly useful for those
+     * graphs that have complex types for {@link Element} identifiers.
+     * </p>
      * For those graphs that do not need to register any custom serializers, the default implementation should suffice.
-     * If the default is overriden, take care to register the current graph to the {@link Io.Builder} via the
-     * {@link Io.Builder#graph(Graph)} method.
+     * If the default is overridden, take care to register the current graph via the
+     * {@link org.apache.tinkerpop.gremlin.structure.io.Io.Builder#graph(Graph)} method.
      */
     public default <I extends Io> I io(final Io.Builder<I> builder) {
         return (I) builder.graph(this).create();
@@ -281,7 +327,7 @@ public interface Graph extends AutoCloseable, Host {
 
     /**
      * Get the {@link org.apache.commons.configuration.Configuration} associated with the construction of this graph.
-     * Whatever configuration was passed to {@link org.apache.tinkerpop.gremlin.structure.util.GraphFactory#open(org.apache.commons.configuration.Configuration)}
+     * Whatever configuration was passed to {@link GraphFactory#open(org.apache.commons.configuration.Configuration)}
      * is what should be returned by this method.
      *
      * @return the configuration used during graph construction.
@@ -289,7 +335,7 @@ public interface Graph extends AutoCloseable, Host {
     public Configuration configuration();
 
     /**
-     * Graph variables are a set of key/value pairs associated with the graph.The keys are String and the values
+     * Graph variables are a set of key/value pairs associated with the graph. The keys are String and the values
      * are Objects.
      */
     public interface Variables {
@@ -342,7 +388,11 @@ public interface Graph extends AutoCloseable, Host {
             }
 
             public static UnsupportedOperationException dataTypeOfVariableValueNotSupported(final Object val) {
-                return new UnsupportedOperationException(String.format("Graph variable value [%s] is of type %s is not supported", val, val.getClass()));
+                return dataTypeOfVariableValueNotSupported(val, null);
+            }
+
+            public static UnsupportedOperationException dataTypeOfVariableValueNotSupported(final Object val, final Exception rootCause) {
+                return new UnsupportedOperationException(String.format("Graph variable value [%s] is of type %s is not supported", val, val.getClass()), rootCause);
             }
         }
 
@@ -400,8 +450,7 @@ public interface Graph extends AutoCloseable, Host {
             public static final String FEATURE_CONCURRENT_ACCESS = "ConcurrentAccess";
 
             /**
-             * Determines if the {@code Graph} implementation supports
-             * {@link org.apache.tinkerpop.gremlin.process.computer.GraphComputer} based processing.
+             * Determines if the {@code Graph} implementation supports {@link GraphComputer} based processing.
              */
             @FeatureDescriptor(name = FEATURE_COMPUTER)
             public default boolean supportsComputer() {
@@ -441,7 +490,7 @@ public interface Graph extends AutoCloseable, Host {
 
             /**
              * Determines if the {@code Graph} implementation supports threaded transactions which allow a transaction
-             * to be executed across multiple threads via {@link org.apache.tinkerpop.gremlin.structure.Transaction#createThreadedTx()}.
+             * to be executed across multiple threads via {@link Transaction#createThreadedTx()}.
              */
             @FeatureDescriptor(name = FEATURE_THREADED_TRANSACTIONS)
             public default boolean supportsThreadedTransactions() {
@@ -690,6 +739,11 @@ public interface Graph extends AutoCloseable, Host {
          * Features that are related to {@link Vertex} {@link Property} objects.
          */
         public interface VertexPropertyFeatures extends PropertyFeatures {
+            /**
+             * @deprecated As of release 3.1.1-incubating, replaced by
+             * {@link org.apache.tinkerpop.gremlin.structure.Graph.Features.VertexFeatures#FEATURE_META_PROPERTIES}
+             */
+            @Deprecated
             public static final String FEATURE_ADD_PROPERTY = "AddProperty";
             public static final String FEATURE_REMOVE_PROPERTY = "RemoveProperty";
             public static final String FEATURE_USER_SUPPLIED_IDS = "UserSuppliedIds";
@@ -701,7 +755,11 @@ public interface Graph extends AutoCloseable, Host {
 
             /**
              * Determines if a {@link VertexProperty} allows properties to be added.
+             *
+             * @deprecated As of release 3.1.1-incubating, replaced by
+             * {@link org.apache.tinkerpop.gremlin.structure.Graph.Features.VertexFeatures#supportsMetaProperties()}
              */
+            @Deprecated
             @FeatureDescriptor(name = FEATURE_ADD_PROPERTY)
             public default boolean supportsAddProperty() {
                 return true;
@@ -1073,6 +1131,7 @@ public interface Graph extends AutoCloseable, Host {
             return new UnsupportedOperationException("Graph does not support graph computer");
         }
 
+        @Deprecated
         public static IllegalArgumentException traversalEngineNotSupported(final TraversalEngine engine) {
             return new IllegalArgumentException("Graph does not support the provided traversal engine: " + engine.getClass().getCanonicalName());
         }
@@ -1101,10 +1160,32 @@ public interface Graph extends AutoCloseable, Host {
             return new IllegalArgumentException(String.format("The provided argument can not be null: %s", argument));
         }
 
+        /**
+         * Deprecated as of 3.2.3, not replaced.
+         *
+         * @see <a href="https://issues.apache.org/jira/browse/TINKERPOP-944">TINKERPOP-944</a>
+         */
+        @Deprecated
         public static NoSuchElementException elementNotFound(final Class<? extends Element> elementClass, final Object id) {
             return (null == id) ?
                     new NoSuchElementException("The " + elementClass.getSimpleName().toLowerCase() + " with id null does not exist in the graph") :
                     new NoSuchElementException("The " + elementClass.getSimpleName().toLowerCase() + " with id " + id + " of type " + id.getClass().getSimpleName() + " does not exist in the graph");
+        }
+
+        /**
+         * Deprecated as of 3.2.3, not replaced.
+         *
+         * @see <a href="https://issues.apache.org/jira/browse/TINKERPOP-944">TINKERPOP-944</a>
+         */
+        @Deprecated
+        public static NoSuchElementException elementNotFound(final Class<? extends Element> elementClass, final Object id, final Exception rootCause) {
+            NoSuchElementException elementNotFoundException;
+            if (null == id)
+                elementNotFoundException = new NoSuchElementException("The " + elementClass.getSimpleName().toLowerCase() + " with id null does not exist in the graph");
+            else
+                elementNotFoundException = new NoSuchElementException("The " + elementClass.getSimpleName().toLowerCase() + " with id " + id + " of type " + id.getClass().getSimpleName() + " does not exist in the graph");
+            elementNotFoundException.initCause(rootCause);
+            return elementNotFoundException;
         }
     }
 
@@ -1178,13 +1259,14 @@ public interface Graph extends AutoCloseable, Host {
         public String specific() default "";
 
         /**
-         * The list of {@link GraphComputer} implementations that a test should opt-out from using (i.e. other
+         * The list of {@link GraphComputer} implementations by class name that a test should opt-out from using (i.e. other
          * graph computers not in this list will execute the test).  This setting should only be included when
          * the test is one that uses the {@link ComputerTraversalEngine} - it will otherwise be ignored.  By
          * default, an empty array is assigned and it is thus assumed that all computers are excluded when an
          * {@code OptOut} annotation is used, therefore this value must be overridden to be more specific.
          */
-        public Class<? extends GraphComputer>[] computers() default { };
+        public String[] computers() default {};
+
     }
 
     /**

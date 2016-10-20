@@ -27,12 +27,17 @@ import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
 import org.apache.tinkerpop.gremlin.process.computer.Memory;
 import org.apache.tinkerpop.gremlin.process.computer.MessageScope;
 import org.apache.tinkerpop.gremlin.process.computer.Messenger;
+import org.apache.tinkerpop.gremlin.process.computer.VertexComputeKey;
 import org.apache.tinkerpop.gremlin.process.computer.VertexProgram;
 import org.apache.tinkerpop.gremlin.process.computer.util.AbstractVertexProgramBuilder;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
+import org.apache.tinkerpop.gremlin.process.traversal.step.util.event.MutationListener;
+import org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.EventStrategy;
 import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.Property;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.structure.util.GraphFactory;
@@ -48,7 +53,6 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * @author Daniel Kuppitz (http://gremlin.guru)
@@ -67,19 +71,14 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
     public static final String DEFAULT_BULK_LOADER_VERTEX_ID = "bulkLoader.vertex.id";
 
     private final MessageScope messageScope;
-    private final Set<String> elementComputeKeys;
+    private final Set<VertexComputeKey> elementComputeKeys;
     private Configuration configuration;
     private BulkLoader bulkLoader;
     private Graph graph;
     private GraphTraversalSource g;
     private long intermediateBatchSize;
 
-    private static final ThreadLocal<AtomicLong> counter = new ThreadLocal<AtomicLong>() {
-        @Override
-        protected AtomicLong initialValue() {
-            return new AtomicLong();
-        }
-    };
+    private BulkLoadingListener listener;
 
     private BulkLoaderVertexProgram() {
         messageScope = MessageScope.Local.of(__::inE);
@@ -91,7 +90,6 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
         final Configuration config = configuration.subset(BULK_LOADER_VERTEX_PROGRAM_CFG_PREFIX);
         if (config.containsKey("class")) {
             final String className = config.getString("class");
-            config.clearProperty("class");
             try {
                 final Class<?> bulkLoaderClass = Class.forName(className);
                 loader = (BulkLoader) bulkLoaderClass.getConstructor().newInstance();
@@ -116,17 +114,19 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
      * @param close Whether to close the current graph instance after calling commit() or not.
      */
     private void commit(final boolean close) {
-        if (!close && (intermediateBatchSize == 0L || counter.get().incrementAndGet() % intermediateBatchSize != 0))
+        if (!close && (intermediateBatchSize == 0L || listener.mutations() < intermediateBatchSize))
             return;
         if (null != graph) {
             if (graph.features().graph().supportsTransactions()) {
-                LOGGER.info("Committing transaction on Graph instance: {} [{}]", graph, counter.get().get());
+                LOGGER.info("Committing transaction on Graph instance: {} [{} mutations]", graph, listener.mutations());
                 try {
                     graph.tx().commit();
                     LOGGER.debug("Committed transaction on Graph instance: {}", graph);
+                    listener.resetCounter();
                 } catch (Exception e) {
                     LOGGER.error("Failed to commit transaction on Graph instance: {}", graph);
                     graph.tx().rollback();
+                    listener.resetCounter();
                     throw e;
                 }
             }
@@ -144,7 +144,6 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
 
     @Override
     public void setup(final Memory memory) {
-        counter.get().set(0L);
     }
 
     @Override
@@ -154,7 +153,7 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
             ConfigurationUtils.copy(config, configuration);
         }
         intermediateBatchSize = configuration.getLong(INTERMEDIATE_BATCH_SIZE_CFG_KEY, 0L);
-        elementComputeKeys.add(configuration.getString(BULK_LOADER_VERTEX_ID_CFG_KEY, DEFAULT_BULK_LOADER_VERTEX_ID));
+        elementComputeKeys.add(VertexComputeKey.of(DEFAULT_BULK_LOADER_VERTEX_ID, true));
         bulkLoader = createBulkLoader();
     }
 
@@ -172,10 +171,8 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
             graph = GraphFactory.open(configuration.subset(WRITE_GRAPH_CFG_KEY));
             LOGGER.info("Opened Graph instance: {}", graph);
             try {
-                if (!graph.features().graph().supportsConcurrentAccess()) {
-                    throw new IllegalStateException("The given graph instance does not allow concurrent access.");
-                }
-                g = graph.traversal();
+                listener = new BulkLoadingListener();
+                g = graph.traversal().withStrategies(EventStrategy.build().addListener(listener).create());
             } catch (Exception e) {
                 try {
                     graph.close();
@@ -208,25 +205,33 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
 
     private void executeInternal(final Vertex sourceVertex, final Messenger<Tuple> messenger, final Memory memory) {
         if (memory.isInitialIteration()) {
+            this.listener.resetStats();
             // get or create the vertex
             final Vertex targetVertex = bulkLoader.getOrCreateVertex(sourceVertex, graph, g);
             // write all the properties of the vertex to the newly created vertex
             final Iterator<VertexProperty<Object>> vpi = sourceVertex.properties();
-            while (vpi.hasNext()) {
-                bulkLoader.getOrCreateVertexProperty(vpi.next(), targetVertex, graph, g);
+            if (this.listener.isNewVertex()) {
+                vpi.forEachRemaining(vp -> bulkLoader.createVertexProperty(vp, targetVertex, graph, g));
+            } else {
+                vpi.forEachRemaining(vp -> bulkLoader.getOrCreateVertexProperty(vp, targetVertex, graph, g));
             }
             this.commit(false);
             if (!bulkLoader.useUserSuppliedIds()) {
                 // create an id pair and send it to all the vertex's incoming adjacent vertices
-                sourceVertex.property(bulkLoader.getVertexIdProperty(), targetVertex.id());
+                sourceVertex.property(DEFAULT_BULK_LOADER_VERTEX_ID, targetVertex.id());
                 messenger.sendMessage(messageScope, Pair.with(sourceVertex.id(), targetVertex.id()));
             }
         } else if (memory.getIteration() == 1) {
             if (bulkLoader.useUserSuppliedIds()) {
                 final Vertex outV = bulkLoader.getVertex(sourceVertex, graph, g);
+                final boolean incremental = outV.edges(Direction.OUT).hasNext();
                 sourceVertex.edges(Direction.OUT).forEachRemaining(edge -> {
                     final Vertex inV = bulkLoader.getVertex(edge.inVertex(), graph, g);
-                    bulkLoader.getOrCreateEdge(edge, outV, inV, graph, g);
+                    if (incremental) {
+                        bulkLoader.getOrCreateEdge(edge, outV, inV, graph, g);
+                    } else {
+                        bulkLoader.createEdge(edge, outV, inV, graph, g);
+                    }
                     this.commit(false);
                 });
             } else {
@@ -238,7 +243,7 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
                     idPairs.put(idPair.getValue(0), idPair.getValue(1));
                 }
                 // get the vertex with given the dummy id property
-                final Long outVId = sourceVertex.value(bulkLoader.getVertexIdProperty());
+                final Object outVId = sourceVertex.value(DEFAULT_BULK_LOADER_VERTEX_ID);
                 final Vertex outV = bulkLoader.getVertexById(outVId, graph, g);
                 // for all the incoming edges of the vertex, get the incoming adjacent vertex and write the edge and its properties
                 sourceVertex.edges(Direction.OUT).forEachRemaining(edge -> {
@@ -249,7 +254,7 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
                 });
             }
         } else if (memory.getIteration() == 2) {
-            final Long vertexId = sourceVertex.value(bulkLoader.getVertexIdProperty());
+            final Object vertexId = sourceVertex.value(DEFAULT_BULK_LOADER_VERTEX_ID);
             bulkLoader.getVertexById(vertexId, graph, g)
                     .property(bulkLoader.getVertexIdProperty()).remove();
             this.commit(false);
@@ -260,7 +265,7 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
     public boolean terminate(final Memory memory) {
         switch (memory.getIteration()) {
             case 1:
-                return bulkLoader.keepOriginalIds();
+                return bulkLoader.keepOriginalIds() || bulkLoader.getVertexIdProperty() == null;
             case 2:
                 return true;
         }
@@ -268,7 +273,7 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
     }
 
     @Override
-    public Set<String> getElementComputeKeys() {
+    public Set<VertexComputeKey> getVertexComputeKeys() {
         return elementComputeKeys;
     }
 
@@ -297,12 +302,12 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
     public String toString() {
         final StringBuilder sb = new StringBuilder();
         if (bulkLoader != null) {
-            sb.append("bulkLoader=").append(bulkLoader.getClass().getSimpleName()).append(",");
-            sb.append("vertexIdProperty=").append(bulkLoader.getVertexIdProperty()).append(",");
-            sb.append("userSuppliedIds=").append(bulkLoader.useUserSuppliedIds()).append(",");
-            sb.append("keepOriginalIds=").append(bulkLoader.keepOriginalIds()).append(",");
+            sb.append("bulkLoader=").append(bulkLoader.getClass().getSimpleName()).append(", ");
+            sb.append("vertexIdProperty=").append(bulkLoader.getVertexIdProperty()).append(", ");
+            sb.append("userSuppliedIds=").append(bulkLoader.useUserSuppliedIds()).append(", ");
+            sb.append("keepOriginalIds=").append(bulkLoader.keepOriginalIds()).append(", ");
         } else {
-            sb.append("bulkLoader=").append(bulkLoader).append(",");
+            sb.append("bulkLoader=").append(bulkLoader).append(", ");
         }
         sb.append("batchSize=").append(intermediateBatchSize);
         return StringFactory.vertexProgramString(this, sb.toString());
@@ -384,8 +389,14 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
          * A configuration for the target graph that can be passed to GraphFactory.open().
          */
         public Builder writeGraph(final String configurationFile) throws ConfigurationException {
-            final Configuration conf = new PropertiesConfiguration(configurationFile);
-            conf.getKeys().forEachRemaining(key -> setGraphConfigurationProperty(key, conf.getProperty(key)));
+            return writeGraph(new PropertiesConfiguration(configurationFile));
+        }
+
+        /**
+         * A configuration for the target graph that can be passed to GraphFactory.open().
+         */
+        public Builder writeGraph(final Configuration configuration) {
+            configuration.getKeys().forEachRemaining(key -> setGraphConfigurationProperty(key, configuration.getProperty(key)));
             return this;
         }
     }
@@ -403,5 +414,84 @@ public class BulkLoaderVertexProgram implements VertexProgram<Tuple> {
                 return true;
             }
         };
+    }
+
+    static class BulkLoadingListener implements MutationListener {
+
+        private long counter;
+        private boolean isNewVertex;
+
+        public BulkLoadingListener() {
+            this.counter = 0L;
+            this.isNewVertex = false;
+        }
+
+        public boolean isNewVertex() {
+            return this.isNewVertex;
+        }
+
+        public long mutations() {
+            return this.counter;
+        }
+
+        public void resetStats() {
+            this.isNewVertex = false;
+        }
+
+        public void resetCounter() {
+            this.counter = 0L;
+        }
+
+        @Override
+        public void vertexAdded(final Vertex vertex) {
+            this.isNewVertex = true;
+            this.counter++;
+        }
+
+        @Override
+        public void vertexRemoved(final Vertex vertex) {
+            this.counter++;
+        }
+
+        @Override
+        public void vertexPropertyChanged(final Vertex element, final Property oldValue, final Object setValue,
+                                          final Object... vertexPropertyKeyValues) {
+            this.counter++;
+        }
+
+        @Override
+        public void vertexPropertyRemoved(final VertexProperty vertexProperty) {
+            this.counter++;
+        }
+
+        @Override
+        public void edgeAdded(final Edge edge) {
+            this.counter++;
+        }
+
+        @Override
+        public void edgeRemoved(final Edge edge) {
+            this.counter++;
+        }
+
+        @Override
+        public void edgePropertyChanged(final Edge element, final Property oldValue, final Object setValue) {
+            this.counter++;
+        }
+
+        @Override
+        public void edgePropertyRemoved(final Edge element, final Property property) {
+            this.counter++;
+        }
+
+        @Override
+        public void vertexPropertyPropertyChanged(final VertexProperty element, final Property oldValue, final Object setValue) {
+            this.counter++;
+        }
+
+        @Override
+        public void vertexPropertyPropertyRemoved(final VertexProperty element, final Property property) {
+            this.counter++;
+        }
     }
 }

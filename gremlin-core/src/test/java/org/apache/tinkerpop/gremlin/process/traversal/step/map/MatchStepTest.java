@@ -20,24 +20,37 @@ package org.apache.tinkerpop.gremlin.process.traversal.step.map;
 
 import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
+import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
+import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.process.traversal.step.StepTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.CoinStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.filter.ConjunctionStep;
+import org.apache.tinkerpop.gremlin.process.traversal.step.filter.ConnectiveStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.WherePredicateStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.WhereTraversalStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.util.LambdaCollectingBarrierStep;
+import org.apache.tinkerpop.gremlin.process.traversal.step.util.EmptyStep;
+import org.apache.tinkerpop.gremlin.process.traversal.traverser.B_LP_O_P_S_SE_SL_TraverserGenerator;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.util.EmptyTraverser;
 import org.apache.tinkerpop.gremlin.structure.T;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.apache.tinkerpop.gremlin.process.traversal.P.eq;
-import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.*;
-import static org.junit.Assert.*;
+import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.and;
+import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.as;
+import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.in;
+import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.match;
+import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.or;
+import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.out;
+import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.where;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
@@ -90,7 +103,7 @@ public class MatchStepTest extends StepTest {
             //
             pattern = matchStep.getGlobalChildren().get(1);
             assertEquals(MatchStep.class, pattern.getStartStep().getClass());
-            assertEquals(ConjunctionStep.Conjunction.OR, ((MatchStep<?, ?>) pattern.getStartStep()).getConjunction());
+            assertEquals(ConnectiveStep.Connective.OR, ((MatchStep<?, ?>) pattern.getStartStep()).getConnective());
             assertEquals("c", ((MatchStep.MatchStartStep) ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(0).getStartStep()).getSelectKey().get());
             assertEquals(PathStep.class, ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(0).getStartStep().getNextStep().getClass());
             assertEquals("d", ((MatchStep.MatchEndStep) ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(0).getEndStep()).getMatchKey().get());
@@ -107,7 +120,7 @@ public class MatchStepTest extends StepTest {
                 __.match(as("a").out().as("b"), as("c").path().as("d").and().as("e").barrier()).asAdmin());
         assertEquals(1, new HashSet<>(traversals).size());   // the two patterns should pre-compile to the same traversal
         traversals.forEach(traversal -> {
-            MatchStep<?, ?> matchStep = (MatchStep<?, ?>) traversal.getStartStep();
+            final MatchStep<?, ?> matchStep = (MatchStep<?, ?>) traversal.getStartStep();
             assertEquals(2, matchStep.getGlobalChildren().size());
             Traversal.Admin<Object, Object> pattern = matchStep.getGlobalChildren().get(0);
             assertEquals("a", ((MatchStep.MatchStartStep) pattern.getStartStep()).getSelectKey().get());
@@ -116,12 +129,12 @@ public class MatchStepTest extends StepTest {
             //
             pattern = matchStep.getGlobalChildren().get(1);
             assertEquals(MatchStep.class, pattern.getStartStep().getClass());
-            assertEquals(ConjunctionStep.Conjunction.AND, ((MatchStep<?, ?>) pattern.getStartStep()).getConjunction());
+            assertEquals(ConnectiveStep.Connective.AND, ((MatchStep<?, ?>) pattern.getStartStep()).getConnective());
             assertEquals("c", ((MatchStep.MatchStartStep) ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(0).getStartStep()).getSelectKey().get());
             assertEquals(PathStep.class, ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(0).getStartStep().getNextStep().getClass());
             assertEquals("d", ((MatchStep.MatchEndStep) ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(0).getEndStep()).getMatchKey().get());
             assertEquals("e", ((MatchStep.MatchStartStep) ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(1).getStartStep()).getSelectKey().get());
-            assertEquals(LambdaCollectingBarrierStep.class, ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(1).getStartStep().getNextStep().getClass());
+            assertEquals(NoOpBarrierStep.class, ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(1).getStartStep().getNextStep().getClass());
             assertFalse(((MatchStep.MatchEndStep) ((MatchStep<?, ?>) pattern.getStartStep()).getGlobalChildren().get(1).getEndStep()).getMatchKey().isPresent());
         });
     }
@@ -133,7 +146,7 @@ public class MatchStepTest extends StepTest {
                 __.match(as("a").out().as("b"), where(as("c").in().as("d"))).asAdmin());
         assertEquals(1, new HashSet<>(traversals).size()); // the two patterns should pre-compile to the same traversal
         traversals.forEach(traversal -> {
-            MatchStep<?, ?> matchStep = (MatchStep<?, ?>) traversal.getStartStep();
+            final MatchStep<?, ?> matchStep = (MatchStep<?, ?>) traversal.getStartStep();
             //assertFalse(matchStep.getStartLabel().isPresent());
             assertEquals(2, matchStep.getGlobalChildren().size());
             Traversal.Admin<Object, Object> pattern = matchStep.getGlobalChildren().get(0);
@@ -164,7 +177,7 @@ public class MatchStepTest extends StepTest {
                 __.match(as("a").out().as("b"), where("c", P.neq("d"))).asAdmin());
         assertEquals(1, new HashSet<>(traversals).size()); // the two patterns should pre-compile to the same traversal
         traversals.forEach(traversal -> {
-            MatchStep<?, ?> matchStep = (MatchStep<?, ?>) traversal.getStartStep();
+            final MatchStep<?, ?> matchStep = (MatchStep<?, ?>) traversal.getStartStep();
             //assertFalse(matchStep.getStartLabel().isPresent());
             assertEquals(2, matchStep.getGlobalChildren().size());
             Traversal.Admin<Object, Object> pattern = matchStep.getGlobalChildren().get(0);
@@ -187,7 +200,7 @@ public class MatchStepTest extends StepTest {
         // MAKE SURE THE SORT ORDER CHANGES AS MORE RESULTS ARE RETURNED BY ONE OR THE OTHER TRAVERSAL
         Traversal.Admin<?, ?> traversal = __.match(as("a").out().as("b"), as("c").in().as("d")).asAdmin();
         MatchStep.CountMatchAlgorithm countMatchAlgorithm = new MatchStep.CountMatchAlgorithm();
-        countMatchAlgorithm.initialize(((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren());
+        countMatchAlgorithm.initialize(TraversalEngine.Type.STANDARD, ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren());
         Traversal.Admin<Object, Object> firstPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(0);
         Traversal.Admin<Object, Object> secondPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(1);
         //
@@ -233,7 +246,7 @@ public class MatchStepTest extends StepTest {
         ///////  MAKE SURE WHERE PREDICATE TRAVERSALS ARE ALWAYS FIRST AS THEY ARE SIMPLY .hasNext() CHECKS
         traversal = __.match(as("a").out().as("b"), as("c").in().as("d"), where("a", P.eq("b"))).asAdmin();
         countMatchAlgorithm = new MatchStep.CountMatchAlgorithm();
-        countMatchAlgorithm.initialize(((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren());
+        countMatchAlgorithm.initialize(TraversalEngine.Type.STANDARD, ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren());
         assertEquals(3, countMatchAlgorithm.bundles.size());
         firstPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(0);
         secondPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(1);
@@ -308,6 +321,83 @@ public class MatchStepTest extends StepTest {
     }
 
     @Test
+    public void testComputerAwareCountMatchAlgorithm() {
+        // MAKE SURE OLAP JOBS ARE BIASED TOWARDS STAR GRAPH DATA
+        final Consumer doNothing = s -> {
+        };
+        final Traversal.Admin<?, ?> traversal = __.match(
+                as("a").sideEffect(doNothing).as("b"),    // 1
+                as("b").sideEffect(doNothing).as("c"),    // 2
+                as("a").sideEffect(doNothing).as("d"),    // 5
+                as("c").sideEffect(doNothing).as("e"),    // 4
+                as("c").sideEffect(doNothing).as("f"))    // 3
+                .asAdmin();
+        traversal.applyStrategies(); // necessary to enure step ids are unique
+        final MatchStep.CountMatchAlgorithm countMatchAlgorithm = new MatchStep.CountMatchAlgorithm();
+        countMatchAlgorithm.initialize(TraversalEngine.Type.COMPUTER, ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren());
+        Traversal.Admin<Object, Object> firstPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(0);
+        Traversal.Admin<Object, Object> secondPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(1);
+        Traversal.Admin<Object, Object> thirdPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(2);
+        Traversal.Admin<Object, Object> forthPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(3);
+        Traversal.Admin<Object, Object> fifthPattern = ((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren().get(4);
+        countMatchAlgorithm.bundles.stream().forEach(bundle -> assertEquals(0.0d, bundle.multiplicity, 0.0d));
+        assertEquals(MatchStep.TraversalType.MATCH_TRAVERSAL, countMatchAlgorithm.getBundle(firstPattern).traversalType);
+        assertEquals(MatchStep.TraversalType.MATCH_TRAVERSAL, countMatchAlgorithm.getBundle(secondPattern).traversalType);
+        assertEquals(MatchStep.TraversalType.MATCH_TRAVERSAL, countMatchAlgorithm.getBundle(thirdPattern).traversalType);
+        assertEquals(MatchStep.TraversalType.MATCH_TRAVERSAL, countMatchAlgorithm.getBundle(forthPattern).traversalType);
+        assertEquals(MatchStep.TraversalType.MATCH_TRAVERSAL, countMatchAlgorithm.getBundle(fifthPattern).traversalType);
+        assertEquals(firstPattern, countMatchAlgorithm.bundles.get(0).traversal);
+        assertEquals(secondPattern, countMatchAlgorithm.bundles.get(1).traversal);
+        assertEquals(thirdPattern, countMatchAlgorithm.bundles.get(2).traversal);
+        assertEquals(forthPattern, countMatchAlgorithm.bundles.get(3).traversal);
+        assertEquals(fifthPattern, countMatchAlgorithm.bundles.get(4).traversal);
+        // MAKE THE SECOND PATTERN EXPENSIVE
+        countMatchAlgorithm.recordStart(EmptyTraverser.instance(), secondPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), secondPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), secondPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), secondPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), secondPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), secondPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), secondPattern);
+        // MAKE THE THIRD PATTERN MORE EXPENSIVE THAN FORTH
+        countMatchAlgorithm.recordStart(EmptyTraverser.instance(), thirdPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), thirdPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), thirdPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), thirdPattern);
+        // MAKE THE FORTH PATTERN EXPENSIVE
+        countMatchAlgorithm.recordStart(EmptyTraverser.instance(), forthPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), forthPattern);
+        countMatchAlgorithm.recordEnd(EmptyTraverser.instance(), forthPattern);
+        //
+        Traverser.Admin traverser = B_LP_O_P_S_SE_SL_TraverserGenerator.instance().generate(1, EmptyStep.instance(), 1l);
+        traverser.addLabels(Collections.singleton("a"));
+        assertEquals(firstPattern, countMatchAlgorithm.apply(traverser));
+        traverser = traverser.split(1, EmptyStep.instance());
+        traverser.getTags().add(firstPattern.getStartStep().getId());
+        traverser.addLabels(Collections.singleton("b"));
+        //
+        assertEquals(secondPattern, countMatchAlgorithm.apply(traverser));
+        traverser = traverser.split(1, EmptyStep.instance());
+        traverser.getTags().add(secondPattern.getStartStep().getId());
+        traverser.addLabels(Collections.singleton("c"));
+        //
+        assertEquals(fifthPattern, countMatchAlgorithm.apply(traverser));
+        traverser = traverser.split(1, EmptyStep.instance());
+        traverser.getTags().add(fifthPattern.getStartStep().getId());
+        traverser.addLabels(Collections.singleton("f"));
+        //
+        assertEquals(forthPattern, countMatchAlgorithm.apply(traverser));
+        traverser = traverser.split(1, EmptyStep.instance());
+        traverser.getTags().add(forthPattern.getStartStep().getId());
+        traverser.addLabels(Collections.singleton("e"));
+        //
+        assertEquals(thirdPattern, countMatchAlgorithm.apply(traverser));
+        traverser = traverser.split(1, EmptyStep.instance());
+        traverser.getTags().add(thirdPattern.getStartStep().getId());
+        traverser.addLabels(Collections.singleton("d"));
+    }
+
+    @Test
     public void shouldCalculateStartLabelCorrectly() {
         Traversal.Admin<?, ?> traversal = match(
                 where(and(
@@ -328,4 +418,5 @@ public class MatchStepTest extends StepTest {
                 as("b").in("created").count().is(P.gt(1))).asAdmin();
         assertEquals("a", MatchStep.Helper.computeStartLabel(((MatchStep<?, ?>) traversal.getStartStep()).getGlobalChildren()));
     }
+
 }

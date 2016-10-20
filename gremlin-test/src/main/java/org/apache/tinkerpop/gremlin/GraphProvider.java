@@ -21,14 +21,12 @@ package org.apache.tinkerpop.gremlin;
 import org.apache.commons.configuration.Configuration;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategy;
 import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.DefaultGraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
-import org.apache.tinkerpop.gremlin.process.traversal.engine.StandardTraversalEngine;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.B_LP_O_P_S_SE_SL_Traverser;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.B_LP_O_S_SE_SL_Traverser;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.B_O_S_SE_SL_Traverser;
@@ -51,8 +49,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Stream;
 
 /**
  * Those developing Gremlin implementations must provide a GraphProvider implementation so that the
@@ -71,7 +69,7 @@ public interface GraphProvider {
 
     /**
      * Implementations from {@code gremlin-core} that need to be part of the clear process.  This does not exempt
-     * vendors from having to register their extensions to any of these classes, but does prevent them from
+     * providers from having to register their extensions to any of these classes, but does prevent them from
      * having to register them in addition to their own.
      */
     public static final Set<Class> CORE_IMPLEMENTATIONS = new HashSet<Class>() {{
@@ -86,29 +84,35 @@ public interface GraphProvider {
     }};
 
     /**
-     * Create a {@link GraphTraversalSource} from a {@link Graph} instance.  The default implementation uses the
-     * {@link StandardTraversalEngine} so vendors should override as necessary if their implementation is testing
-     * something that requires a different engine type, like those tests for
-     * {@link org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine.Type}.
+     * Create a {@link GraphTraversalSource} from a {@link Graph} instance.  The default implementation does not
+     * use {@link GraphComputer} so providers should override as necessary if their implementation is testing
+     * something that requires a different engine type, like {@link GraphComputer}.
      */
     public default GraphTraversalSource traversal(final Graph graph) {
-        return GraphTraversalSource.standard().create(graph);
+        return graph.traversal();
     }
 
     /**
-     * Create a {@link GraphTraversalSource} from a {@link Graph} instance.  The default implementation uses the
-     * {@link StandardTraversalEngine} so vendors should override as necessary if their implementation is testing
-     * something that requires a different engine type, like those tests for
-     * {@link org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine.Type}.
+     * Create a {@link GraphTraversalSource} from a {@link Graph} instance.  The default implementation does not use
+     * {@link GraphComputer} so providers should override as necessary if their implementation is testing
+     * something that requires a different engine type, like {@link GraphComputer}.
      * <p/>
      * Implementations should apply strategies as necessary to the
-     * {@link org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource.Builder} before calling
+     * {@link org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource} before calling
      * it's {@code create} method.
      */
     public default GraphTraversalSource traversal(final Graph graph, final TraversalStrategy... strategies) {
-        final GraphTraversalSource.Builder builder = GraphTraversalSource.build().engine(StandardTraversalEngine.build());
-        Stream.of(strategies).forEach(builder::with);
-        return builder.create(graph);
+        return this.traversal(graph).withStrategies(strategies);
+    }
+
+    /**
+     * Create a {@link GraphComputer} from the {@link Graph} instance. The default implementation simply calls {@code graph.compute()}.
+     *
+     * @param graph the graph to get the graph computer from
+     * @return a new graph computer
+     */
+    public default GraphComputer getGraphComputer(final Graph graph) {
+        return graph.compute();
     }
 
     /**
@@ -152,12 +156,15 @@ public interface GraphProvider {
 
     /**
      * Clears a {@link Graph} of all data and settings.  Implementations will have different ways of handling this.
+     * It is typically expected that {@link Graph#close()} will be called and open transactions will be closed.
      * For a brute force approach, implementers can simply delete data directories provided in the configuration.
      * Implementers may choose a more elegant approach if it exists.
      * <p/>
      * Implementations should be able to accept an argument of null for the Graph, in which case the only action
      * that can be performed is a clear given the configuration.  The method will typically be called this way
      * as clean up task on setup to ensure that a persisted graph has a clear space to create a test graph.
+     * <p/>
+     * Calls to this method may occur multiple times for a specific test. Develop this method to be idempotent.
      */
     public void clear(final Graph graph, final Configuration configuration) throws Exception;
 
@@ -269,9 +276,28 @@ public interface GraphProvider {
     public Set<Class> getImplementations();
 
     /**
+     * Helper method for those build {@link GraphProvider} implementations that need a standard working directory
+     * for tests (e.g. graphs that persist data to disk). Typically, there is no need to override the default
+     * behavior of this method and if it is overridden, it is usually best to continue to use the {@link TestHelper}
+     * to produce the working directory as it will create the path in the appropriate build directories.
+     */
+    public default String getWorkingDirectory() {
+        return TestHelper.makeTestDataPath(this.getClass(), "graph-provider-data").getAbsolutePath();
+    }
+
+    /**
+     * Returns a {@link TestListener} implementation that provides feedback to the {@link GraphProvider} implementation.
+     * By default, this returns an empty listener.
+     */
+    public default Optional<TestListener> getTestListener() {
+        return Optional.empty();
+    }
+
+    /**
      * An annotation to be applied to a {@code GraphProvider} implementation that provides additional information
      * about its intentions. The {@code Descriptor} is required by those {@code GraphProvider} implementations
-     * that will be assigned to test suites that use {@link TraversalEngine.Type#COMPUTER}.
+     * that will be assigned to test suites that use
+     * {@link org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine.Type#COMPUTER}.
      */
     @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.TYPE)
@@ -284,5 +310,15 @@ public interface GraphProvider {
          * This value should be null if a {@link GraphComputer} is not being used.
          */
         public Class<? extends GraphComputer> computer();
+    }
+
+    public interface TestListener {
+        public default void onTestStart(final Class<?> test, final String testName) {
+            // do nothing
+        }
+
+        public default void onTestEnd(final Class<?> test, final String testName) {
+            // do nothing
+        }
     }
 }

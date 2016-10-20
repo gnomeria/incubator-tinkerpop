@@ -23,6 +23,7 @@ import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.tinkerpop.gremlin.AbstractGremlinTest;
 import org.apache.tinkerpop.gremlin.FeatureRequirementSet;
 import org.apache.tinkerpop.gremlin.LoadGraphWith;
+import org.apache.tinkerpop.gremlin.groovy.CompilerCustomizerProvider;
 import org.apache.tinkerpop.gremlin.groovy.DefaultImportCustomizerProvider;
 import org.apache.tinkerpop.gremlin.groovy.NoImportCustomizerProvider;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
@@ -47,7 +48,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -61,17 +61,19 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
     public void shouldDoSomeGremlin() throws Exception {
         final ScriptEngine engine = new GremlinGroovyScriptEngine();
         final List list = new ArrayList();
-        engine.put("g", g);
-        engine.put("temp", list);
+        final Bindings bindings = engine.createBindings();
+        bindings.put("g", g);
+        bindings.put("marko", convertToVertexId("marko"));
+        bindings.put("temp", list);
         assertEquals(list.size(), 0);
-        engine.eval("g.V(" + convertToVertexId("marko") +").out().fill(temp)");
+        engine.eval("g.V(marko).out().fill(temp)",bindings);
         assertEquals(list.size(), 3);
     }
 
     @Test
     @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
     public void shouldLoadImports() throws Exception {
-        final ScriptEngine engineNoImports = new GremlinGroovyScriptEngine(NoImportCustomizerProvider.INSTANCE);
+        final ScriptEngine engineNoImports = new GremlinGroovyScriptEngine((CompilerCustomizerProvider) NoImportCustomizerProvider.INSTANCE);
         try {
             engineNoImports.eval("Vertex.class.getName()");
             fail("Should have thrown an exception because no imports were supplied");
@@ -79,7 +81,7 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
             assertTrue(se instanceof ScriptException);
         }
 
-        final ScriptEngine engineWithImports = new GremlinGroovyScriptEngine(new DefaultImportCustomizerProvider());
+        final ScriptEngine engineWithImports = new GremlinGroovyScriptEngine((CompilerCustomizerProvider) new DefaultImportCustomizerProvider());
         engineWithImports.put("g", g);
         assertEquals(Vertex.class.getName(), engineWithImports.eval("Vertex.class.getName()"));
         assertEquals(2l, engineWithImports.eval("g.V().has('age',gt(30)).count().next()"));
@@ -92,7 +94,7 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
     @Test
     @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
     public void shouldLoadStandardImportsAndThenAddToThem() throws Exception {
-        final GremlinGroovyScriptEngine engine = new GremlinGroovyScriptEngine(new DefaultImportCustomizerProvider());
+        final GremlinGroovyScriptEngine engine = new GremlinGroovyScriptEngine((CompilerCustomizerProvider) new DefaultImportCustomizerProvider());
         engine.put("g", g);
         assertEquals(Vertex.class.getName(), engine.eval("Vertex.class.getName()"));
         assertEquals(2l, engine.eval("g.V().has('age',gt(30)).count().next()"));
@@ -122,7 +124,8 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
     public void shouldProperlyHandleBindings() throws Exception {
         final ScriptEngine engine = new GremlinGroovyScriptEngine();
         engine.put("g", g);
-        Assert.assertEquals(g.V(convertToVertexId("marko")).next(), engine.eval("g.V(" + convertToVertexId("marko") + ").next()"));
+        engine.put("marko", convertToVertexId("marko"));
+        Assert.assertEquals(g.V(convertToVertexId("marko")).next(), engine.eval("g.V(marko).next()"));
 
         final Bindings bindings = engine.createBindings();
         bindings.put("g", g);
@@ -146,7 +149,8 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
     public void shouldClearBindingsBetweenEvals() throws Exception {
         final ScriptEngine engine = new GremlinGroovyScriptEngine();
         engine.put("g", g);
-        assertEquals(g.V(convertToVertexId("marko")).next(), engine.eval("g.V(" + convertToVertexId("marko") + ").next()"));
+        engine.put("marko", convertToVertexId("marko"));
+        assertEquals(g.V(convertToVertexId("marko")).next(), engine.eval("g.V(marko).next()"));
 
         final Bindings bindings = engine.createBindings();
         bindings.put("g", g);
@@ -190,6 +194,9 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
                             assertNotNull(result);
                     } catch (ScriptException e) {
                         assertFalse(true);
+                    } finally {
+                        if (graph.features().graph().supportsTransactions())
+                            g.tx().rollback();
                     }
                     latch.countDown();
                 }
@@ -225,6 +232,9 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
                     } catch (ScriptException e) {
                         //System.out.println(e);
                         assertFalse(true);
+                    } finally {
+                        if (graph.features().graph().supportsTransactions())
+                            g.tx().rollback();
                     }
                     latch.countDown();
                 }
@@ -240,26 +250,29 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
 
         final Bindings bindings = engine.createBindings();
         bindings.put("g", g);
+        bindings.put("marko", convertToVertexId("marko"));
+        bindings.put("vadas", convertToVertexId("vadas"));
 
         // strong referenced global closure
         engine.eval("def isVadas(v){v.value('name')=='vadas'}", bindings);
-        assertEquals(true, engine.eval("isVadas(g.V(" + convertToVertexId("vadas") + ").next())", bindings));
+        assertEquals(true, engine.eval("isVadas(g.V(vadas).next())", bindings));
 
         // phantom referenced global closure
         bindings.put(GremlinGroovyScriptEngine.KEY_REFERENCE_TYPE, GremlinGroovyScriptEngine.REFERENCE_TYPE_PHANTOM);
         engine.eval("def isMarko(v){v.value('name')=='marko'}", bindings);
 
         try {
-            engine.eval("isMarko(g.V(" + convertToVertexId("marko") + ").next())", bindings);
+            engine.eval("isMarko(g.V(marko).next())", bindings);
             fail("the isMarko function should not be present");
         } catch (Exception ex) {
 
         }
 
-        assertEquals(true, engine.eval("def isMarko(v){v.value('name')=='marko'}; isMarko(g.V(" + convertToVertexId("marko") + ").next())", bindings));
+        assertEquals(true, engine.eval("def isMarko(v){v.value('name')=='marko'}; isMarko(g.V(marko).next())", bindings));
 
         try {
-            engine.eval("isMarko(g.V(" + convertToVertexId("marko") + ").next())", bindings);
+            engine.eval("isMarko(g.V(marko"
+            		+ ").next())", bindings);
             fail("the isMarko function should not be present");
         } catch (Exception ex) {
 
@@ -268,7 +281,7 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
         bindings.remove(GremlinGroovyScriptEngine.KEY_REFERENCE_TYPE);
 
         // isVadas class was a hard reference so it should still be hanging about
-        assertEquals(true, engine.eval("isVadas(g.V(" + convertToVertexId("vadas") + ").next())", bindings));
+        assertEquals(true, engine.eval("isVadas(g.V(vadas).next())", bindings));
     }
 
     @Test
@@ -279,6 +292,7 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
         final Bindings bindings = engine.createBindings();
         bindings.put("g", g);
         bindings.put("#jsr223.groovy.engine.keep.globals", "phantom");
+        bindings.put("vadas", convertToVertexId("vadas"));
 
         // this works on its own when the function and the line that uses it is in one "script".  this is the
         // current workaround
@@ -289,7 +303,7 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
 
         // validate that isVadas throws an exception since it is not defined
         try {
-            engine.eval("isVadas(g.V(" + convertToVertexId("vadas") + ").next())", bindings);
+            engine.eval("isVadas(g.V(vadas).next())", bindings);
 
             // fail the test if the above doesn't throw an exception
             fail();
@@ -302,7 +316,7 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
         engine.eval("def isVadas(v){v.value('name')=='vadas'}", bindings);
 
         // make sure the function works on its own...no problem
-        assertEquals(true, engine.eval("isVadas(g.V(" + convertToVertexId("vadas") + ").next())", bindings));
+        assertEquals(true, engine.eval("isVadas(g.V(vadas).next())", bindings));
 
         // make sure the function works in a closure...this generates a StackOverflowError
         assertEquals(g.V(convertToVertexId("vadas")).next(), engine.eval("g.V().filter{isVadas(it.get())}.next()", bindings));
@@ -316,16 +330,17 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
 
         final Bindings bindings = engine.createBindings();
         bindings.put("g", g);
+        bindings.put("vadas", convertToVertexId("vadas"));
 
         // works when it's all defined together
-        assertEquals(true, engine.eval("class c { static def isVadas(v){v.value('name')=='vadas'}};c.isVadas(g.V(" + convertToVertexId("vadas") + ").next())", bindings));
+        assertEquals(true, engine.eval("class c { static def isVadas(v){v.value('name')=='vadas'}};c.isVadas(g.V(vadas).next())", bindings));
 
         // let's reset this piece and make sure isVadas is not hanging around.
         engine.reset();
 
         // validate that isVadas throws an exception since it is not defined
         try {
-            engine.eval("c.isVadas(g.V(" + convertToVertexId("vadas") + ").next())", bindings);
+            engine.eval("c.isVadas(g.V(vadas).next())", bindings);
 
             // fail the test if the above doesn't throw an exception
             fail("Function should be gone");
@@ -344,7 +359,7 @@ public class GremlinGroovyScriptEngineOverGraphTest extends AbstractGremlinTest 
         engine.eval("class c { static def isVadas(v){v.name=='vadas'}};null;", bindings);
 
         // make sure the class works on its own...this generates: groovy.lang.MissingPropertyException: No such property: c for class: Script2
-        assertEquals(true, engine.eval("c.isVadas(g.V(" + convertToVertexId("vadas") + ").next())", bindings));
+        assertEquals(true, engine.eval("c.isVadas(g.V(vadas).next())", bindings));
     }
 
     @Test

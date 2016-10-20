@@ -33,6 +33,7 @@ import org.apache.tinkerpop.gremlin.structure.util.reference.ReferencePath;
 import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceProperty;
 import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex;
 import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertexProperty;
+import org.apache.tinkerpop.gremlin.util.function.Lambda;
 import org.apache.tinkerpop.shaded.kryo.ClassResolver;
 import org.apache.tinkerpop.shaded.kryo.Kryo;
 import org.apache.tinkerpop.shaded.kryo.KryoException;
@@ -52,7 +53,7 @@ import static org.apache.tinkerpop.shaded.kryo.util.Util.getWrapperClass;
  *
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
-class GryoClassResolver implements ClassResolver {
+public class GryoClassResolver implements ClassResolver {
     static public final byte NAME = -1;
 
     protected Kryo kryo;
@@ -105,6 +106,8 @@ class GryoClassResolver implements ClassResolver {
             type = Property.class;
         else if (!ReferencePath.class.isAssignableFrom(clazz) && !DetachedPath.class.isAssignableFrom(clazz) && Path.class.isAssignableFrom(clazz))
             type = Path.class;
+        else if (Lambda.class.isAssignableFrom(clazz))
+            type = Lambda.class;
         else
             type = clazz;
 

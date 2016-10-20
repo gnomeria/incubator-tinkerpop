@@ -20,7 +20,7 @@ package org.apache.tinkerpop.gremlin.tinkergraph.process.traversal.step.sideEffe
 
 import org.apache.tinkerpop.gremlin.process.traversal.Compare;
 import org.apache.tinkerpop.gremlin.process.traversal.step.HasContainerHolder;
-import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GraphStep;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GraphStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.HasContainer;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Element;
@@ -28,6 +28,7 @@ import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerHelper;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,14 +42,19 @@ import java.util.stream.Collectors;
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  * @author Pieter Martin
  */
-public final class TinkerGraphStep<S extends Element> extends GraphStep<S> implements HasContainerHolder {
+public final class TinkerGraphStep<S, E extends Element> extends GraphStep<S, E> implements HasContainerHolder {
 
     private final List<HasContainer> hasContainers = new ArrayList<>();
 
-    public TinkerGraphStep(final GraphStep<S> originalGraphStep) {
-        super(originalGraphStep.getTraversal(), originalGraphStep.getReturnClass(), originalGraphStep.getIds());
+    public TinkerGraphStep(final GraphStep<S, E> originalGraphStep) {
+        super(originalGraphStep.getTraversal(), originalGraphStep.getReturnClass(), originalGraphStep.isStartStep(), originalGraphStep.getIds());
         originalGraphStep.getLabels().forEach(this::addLabel);
-        this.setIteratorSupplier(() -> (Iterator<S>) (Vertex.class.isAssignableFrom(this.returnClass) ? this.vertices() : this.edges()));
+
+        // we used to only setIteratorSupplier() if there were no ids OR the first id was instanceof Element,
+        // but that allowed the filter in g.V(v).has('k','v') to be ignored.  this created problems for
+        // PartitionStrategy which wants to prevent someone from passing "v" from one TraversalSource to
+        // another TraversalSource using a different partition
+        this.setIteratorSupplier(() -> (Iterator<E>) (Vertex.class.isAssignableFrom(this.returnClass) ? this.vertices() : this.edges()));
     }
 
     private Iterator<? extends Edge> edges() {
@@ -74,17 +80,17 @@ public final class TinkerGraphStep<S extends Element> extends GraphStep<S> imple
         else
             return null == indexedContainer ?
                     this.iteratorList(graph.vertices()) :
-                    TinkerHelper.queryVertexIndex(graph, indexedContainer.getKey(), indexedContainer.getPredicate().getValue()).stream()
-                            .filter(vertex -> HasContainer.testAll(vertex, this.hasContainers))
-                            .collect(Collectors.<Vertex>toList()).iterator();
+                    IteratorUtils.filter(TinkerHelper.queryVertexIndex(graph, indexedContainer.getKey(), indexedContainer.getPredicate().getValue()).iterator(),
+                            vertex -> HasContainer.testAll(vertex, this.hasContainers));
     }
 
     private HasContainer getIndexKey(final Class<? extends Element> indexedClass) {
         final Set<String> indexedKeys = ((TinkerGraph) this.getTraversal().getGraph().get()).getIndexedKeys(indexedClass);
-        return this.hasContainers.stream()
-                .filter(c -> indexedKeys.contains(c.getKey()) && c.getPredicate().getBiPredicate() == Compare.eq)
-                .findAny()
-                .orElseGet(() -> null);
+
+        final Iterator<HasContainer> itty = IteratorUtils.filter(hasContainers.iterator(),
+                c -> c.getPredicate().getBiPredicate() == Compare.eq && indexedKeys.contains(c.getKey()));
+        return itty.hasNext() ? itty.next() : null;
+
     }
 
     @Override
@@ -97,7 +103,7 @@ public final class TinkerGraphStep<S extends Element> extends GraphStep<S> imple
                     StringFactory.stepString(this, this.returnClass.getSimpleName().toLowerCase(), Arrays.toString(this.ids), this.hasContainers);
     }
 
-    private final <E extends Element> Iterator<E> iteratorList(final Iterator<E> iterator) {
+    private <E extends Element> Iterator<E> iteratorList(final Iterator<E> iterator) {
         final List<E> list = new ArrayList<>();
         while (iterator.hasNext()) {
             final E e = iterator.next();
@@ -115,5 +121,10 @@ public final class TinkerGraphStep<S extends Element> extends GraphStep<S> imple
     @Override
     public void addHasContainer(final HasContainer hasContainer) {
         this.hasContainers.add(hasContainer);
+    }
+
+    @Override
+    public int hashCode() {
+        return super.hashCode() ^ this.hasContainers.hashCode();
     }
 }

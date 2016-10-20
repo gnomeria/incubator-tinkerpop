@@ -19,162 +19,82 @@
 package org.apache.tinkerpop.gremlin.process.traversal.strategy.optimization;
 
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategies;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
-import org.apache.tinkerpop.gremlin.process.traversal.step.filter.RangeGlobalStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.filter.TraversalFilterStep;
 import org.apache.tinkerpop.gremlin.process.traversal.util.DefaultTraversalStrategies;
-import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalHelper;
-import org.junit.Before;
 import org.junit.Test;
-import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
 import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.apache.tinkerpop.gremlin.process.traversal.P.*;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.gt;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.gte;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.inside;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.lt;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.lte;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.neq;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.outside;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.within;
+import static org.apache.tinkerpop.gremlin.process.traversal.P.without;
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * @author Daniel Kuppitz (http://gremlin.guru)
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
-@RunWith(Enclosed.class)
+@RunWith(Parameterized.class)
 public class RangeByIsCountStrategyTest {
 
-    @RunWith(Parameterized.class)
-    public static class StandardTest extends AbstractRangeByIsCountStrategyTest {
+    @Parameterized.Parameter(value = 0)
+    public Traversal original;
 
-        @Parameterized.Parameters(name = "{0}")
-        public static Iterable<Object[]> data() {
-            return generateTestParameters();
-        }
+    @Parameterized.Parameter(value = 1)
+    public Traversal optimized;
 
-        @Parameterized.Parameter(value = 0)
-        public String name;
-
-        @Parameterized.Parameter(value = 1)
-        public Object predicate;
-
-        @Parameterized.Parameter(value = 2)
-        public long expectedHighRange;
-
-        @Before
-        public void setup() {
-            this.traversalEngine = mock(TraversalEngine.class);
-            when(this.traversalEngine.getType()).thenReturn(TraversalEngine.Type.STANDARD);
-        }
-
-        @Test
-        public void shouldApplyStrategy() {
-            doTest(predicate, expectedHighRange);
-        }
+    void applyRangeByIsCountStrategy(final Traversal traversal) {
+        final TraversalStrategies strategies = new DefaultTraversalStrategies();
+        strategies.addStrategies(RangeByIsCountStrategy.instance());
+        traversal.asAdmin().setStrategies(strategies);
+        traversal.asAdmin().applyStrategies();
     }
 
-    @RunWith(Parameterized.class)
-    public static class ComputerTest extends AbstractRangeByIsCountStrategyTest {
-
-        @Parameterized.Parameters(name = "{0}")
-        public static Iterable<Object[]> data() {
-            return generateTestParameters();
-        }
-
-        @Parameterized.Parameter(value = 0)
-        public String name;
-
-        @Parameterized.Parameter(value = 1)
-        public Object predicate;
-
-        @Parameterized.Parameter(value = 2)
-        public long expectedHighRange;
-
-        @Before
-        public void setup() {
-            this.traversalEngine = mock(TraversalEngine.class);
-            when(this.traversalEngine.getType()).thenReturn(TraversalEngine.Type.COMPUTER);
-        }
-
-        @Test
-        public void shouldApplyStrategy() {
-            doTest(predicate, expectedHighRange);
-        }
+    @Test
+    public void doTest() {
+        applyRangeByIsCountStrategy(original);
+        assertEquals(optimized, original);
     }
 
-    public static class SpecificComputerTest extends AbstractRangeByIsCountStrategyTest {
+    @Parameterized.Parameters(name = "{0}")
+    public static Iterable<Object[]> generateTestParameters() {
 
-        @Before
-        public void setup() {
-            this.traversalEngine = mock(TraversalEngine.class);
-            when(this.traversalEngine.getType()).thenReturn(TraversalEngine.Type.COMPUTER);
-        }
-
-        @Test
-        public void nestedCountEqualsNullShouldLimitToOne() {
-            final AtomicInteger counter = new AtomicInteger(0);
-            final Traversal traversal = __.out().where(__.outE("created").count().is(0));
-            applyRangeByIsCountStrategy(traversal);
-
-            final TraversalFilterStep filterStep = TraversalHelper.getStepsOfClass(TraversalFilterStep.class, traversal.asAdmin()).stream().findFirst().get();
-            final Traversal nestedTraversal = (Traversal) filterStep.getLocalChildren().get(0);
-            TraversalHelper.getStepsOfClass(RangeGlobalStep.class, nestedTraversal.asAdmin()).stream().forEach(step -> {
-                assertEquals(0, step.getLowRange());
-                assertEquals(1, step.getHighRange());
-                counter.incrementAndGet();
-            });
-            assertEquals(1, counter.get());
-        }
-    }
-
-    private static abstract class AbstractRangeByIsCountStrategyTest {
-
-        protected TraversalEngine traversalEngine;
-
-        void applyRangeByIsCountStrategy(final Traversal traversal) {
-            final TraversalStrategies strategies = new DefaultTraversalStrategies();
-            strategies.addStrategies(RangeByIsCountStrategy.instance());
-
-            traversal.asAdmin().setStrategies(strategies);
-            traversal.asAdmin().setEngine(this.traversalEngine);
-            traversal.asAdmin().applyStrategies();
-        }
-
-        public void doTest(final Object predicate, final long expectedHighRange) {
-            final AtomicInteger counter = new AtomicInteger(0);
-            final Traversal traversal = __.out().count().is(predicate);
-
-            applyRangeByIsCountStrategy(traversal);
-
-            final List<RangeGlobalStep> steps = TraversalHelper.getStepsOfClass(RangeGlobalStep.class, traversal.asAdmin());
-            assertEquals(1, steps.size());
-
-            steps.forEach(step -> {
-                assertEquals(0, step.getLowRange());
-                assertEquals(expectedHighRange, step.getHighRange());
-                counter.incrementAndGet();
-            });
-
-            assertEquals(1, counter.intValue());
-        }
-
-        static Iterable<Object[]> generateTestParameters() {
-
-            return Arrays.asList(new Object[][]{
-                    {"countEqualsNullShouldLimitToOne", eq(0l), 1l},
-                    {"countNotEqualsFourShouldLimitToFive", neq(4l), 5l},
-                    {"countLessThanOrEqualThreeShouldLimitToFour", lte(3l), 4l},
-                    {"countLessThanThreeShouldLimitToThree", lt(3l), 3l},
-                    {"countGreaterThanTwoShouldLimitToThree", gt(2l), 3l},
-                    {"countGreaterThanOrEqualTwoShouldLimitToTwo", gte(2l), 2l},
-                    {"countInsideTwoAndFourShouldLimitToFour", inside(2l, 4l), 4l},
-                    {"countOutsideTwoAndFourShouldLimitToFive", outside(2l, 4l), 5l},
-                    {"countWithinTwoSixFourShouldLimitToSeven", within(2l, 6l, 4l), 7l},
-                    {"countWithoutTwoSixFourShouldLimitToSix", without(2l, 6l, 4l), 6l}});
-        }
+        return Arrays.asList(new Traversal[][]{
+                {__.count().is(0), __.not(__.identity())},
+                {__.count().is(1), __.limit(2).count().is(1)},
+                {__.out().count().is(0), __.not(__.out())},
+                {__.outE().count().is(lt(1)), __.not(__.outE())},
+                {__.both().count().is(lte(0)), __.not(__.both())},
+                {__.store("x").count().is(0).as("a"), __.store("x").limit(1).count().is(0).as("a")},
+                {__.out().count().as("a").is(0), __.out().limit(1).count().as("a").is(0)},
+                {__.out().count().is(neq(4)), __.out().limit(5).count().is(neq(4))},
+                {__.out().count().is(lte(3)), __.out().limit(4).count().is(lte(3))},
+                {__.out().count().is(lt(3)), __.out().limit(3).count().is(lt(3))},
+                {__.out().count().is(gt(2)), __.out().limit(3).count().is(gt(2))},
+                {__.out().count().is(gte(2)), __.out().limit(2).count().is(gte(2))},
+                {__.out().count().is(inside(2, 4)), __.out().limit(4).count().is(inside(2, 4))},
+                {__.out().count().is(outside(2, 4)), __.out().limit(5).count().is(outside(2, 4))},
+                {__.out().count().is(within(2, 6, 4)), __.out().limit(7).count().is(within(2, 6, 4))},
+                {__.out().count().is(without(2, 6, 4)), __.out().limit(6).count().is(without(2, 6, 4))},
+                {__.map(__.count().is(0)), __.map(__.limit(1).count().is(0))},
+                {__.flatMap(__.count().is(0)), __.flatMap(__.limit(1).count().is(0))},
+                {__.filter(__.count().is(0)), __.filter(__.not(__.identity()))},
+                {__.sideEffect(__.count().is(0)), __.sideEffect(__.not(__.identity()))},
+                {__.branch(__.count().is(0)), __.branch(__.limit(1).count().is(0))},
+                {__.count().is(0).store("x"), __.limit(1).count().is(0).store("x")},
+                {__.repeat(__.out()).until(__.outE().count().is(0)), __.repeat(__.out()).until(__.not(__.outE()))},
+                {__.repeat(__.out()).emit(__.outE().count().is(0)), __.repeat(__.out()).emit(__.not(__.outE()))},
+                {__.where(__.outE().hasLabel("created").count().is(0)), __.where(__.not(__.outE().hasLabel("created")))},
+                {__.where(__.out().outE().hasLabel("created").count().is(0)), __.where(__.out().not(__.outE().hasLabel("created")))},
+        });
     }
 }

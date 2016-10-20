@@ -20,20 +20,17 @@ package org.apache.tinkerpop.gremlin.hadoop.groovy.plugin;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.mapred.JobClient;
-import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.tinkerpop.gremlin.groovy.plugin.AbstractGremlinPlugin;
 import org.apache.tinkerpop.gremlin.groovy.plugin.IllegalEnvironmentException;
 import org.apache.tinkerpop.gremlin.groovy.plugin.PluginAcceptor;
 import org.apache.tinkerpop.gremlin.groovy.plugin.PluginInitializationException;
 import org.apache.tinkerpop.gremlin.groovy.plugin.RemoteAcceptor;
 import org.apache.tinkerpop.gremlin.hadoop.Constants;
-import org.apache.tinkerpop.gremlin.hadoop.process.computer.giraph.GiraphGraphComputer;
 import org.apache.tinkerpop.gremlin.hadoop.process.computer.mapreduce.MapReduceGraphComputer;
-import org.apache.tinkerpop.gremlin.hadoop.process.computer.spark.SparkGraphComputer;
 import org.apache.tinkerpop.gremlin.hadoop.structure.HadoopConfiguration;
 import org.apache.tinkerpop.gremlin.hadoop.structure.HadoopGraph;
-import org.apache.tinkerpop.gremlin.hadoop.structure.hdfs.HDFSTools;
+import org.apache.tinkerpop.gremlin.hadoop.structure.io.FileSystemStorage;
 import org.apache.tinkerpop.gremlin.hadoop.structure.io.VertexWritable;
 import org.apache.tinkerpop.gremlin.hadoop.structure.io.graphson.GraphSONInputFormat;
 import org.apache.tinkerpop.gremlin.hadoop.structure.io.gryo.GryoInputFormat;
@@ -68,16 +65,10 @@ public final class HadoopGremlinPlugin extends AbstractGremlinPlugin {
         add(IMPORT_SPACE + GryoInputFormat.class.getPackage().getName() + DOT_STAR);
         add(IMPORT_SPACE + GraphSONInputFormat.class.getPackage().getName() + DOT_STAR);
         add(IMPORT_SPACE + ScriptInputFormat.class.getPackage().getName() + DOT_STAR);
-        add(IMPORT_SPACE + HDFSTools.class.getPackage().getName() + DOT_STAR);
+        add(IMPORT_SPACE + SequenceFileInputFormat.class.getCanonicalName());
         ////
-        add(IMPORT_SPACE + GiraphGraphComputer.class.getPackage().getName() + DOT_STAR);
-        add(IMPORT_SPACE + SparkGraphComputer.class.getPackage().getName() + DOT_STAR);
         add(IMPORT_SPACE + MapReduceGraphComputer.class.getPackage().getName() + DOT_STAR);
     }};
-
-    public HadoopGremlinPlugin() {
-        super(true);
-    }
 
     @Override
     public String getName() {
@@ -88,18 +79,8 @@ public final class HadoopGremlinPlugin extends AbstractGremlinPlugin {
     public void afterPluginTo(final PluginAcceptor pluginAcceptor) throws PluginInitializationException, IllegalEnvironmentException {
         pluginAcceptor.addImports(IMPORTS);
         try {
-            pluginAcceptor.eval(String.format("Logger.getLogger(%s).setLevel(Level.INFO)", JobClient.class.getName()));
-            pluginAcceptor.eval(String.format("Logger.getLogger(%s).setLevel(Level.INFO)", Job.class.getName()));
-            ///
-            pluginAcceptor.eval(String.format("Logger.getLogger(%s).setLevel(Level.INFO)", GiraphGraphComputer.class.getName()));
-            pluginAcceptor.eval(String.format("Logger.getLogger(%s).setLevel(Level.INFO)", SparkGraphComputer.class.getName()));
-            pluginAcceptor.eval(String.format("Logger.getLogger(%s).setLevel(Level.INFO)", MapReduceGraphComputer.class.getName()));
-            ///
-            pluginAcceptor.eval(String.format("Logger.getLogger(%s).setLevel(Level.INFO)", HadoopGraph.class.getName()));
-            pluginAcceptor.eval(HadoopLoader.class.getCanonicalName() + ".load()");
-
-            pluginAcceptor.addBinding("hdfs", FileSystem.get(new Configuration()));
-            pluginAcceptor.addBinding("local", FileSystem.getLocal(new Configuration()));
+            pluginAcceptor.addBinding("hdfs", FileSystemStorage.open(FileSystem.get(new Configuration())));
+            pluginAcceptor.addBinding("fs", FileSystemStorage.open(FileSystem.getLocal(new Configuration())));
             if (null == System.getenv(Constants.HADOOP_GREMLIN_LIBS))
                 HadoopGraph.LOGGER.warn("Be sure to set the environmental variable: " + Constants.HADOOP_GREMLIN_LIBS);
             else

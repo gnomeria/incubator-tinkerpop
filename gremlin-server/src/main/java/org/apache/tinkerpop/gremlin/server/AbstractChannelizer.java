@@ -24,9 +24,11 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslProvider;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import org.apache.tinkerpop.gremlin.driver.MessageSerializer;
+import org.apache.tinkerpop.gremlin.driver.ser.AbstractGraphSONMessageSerializerV1d0;
+import org.apache.tinkerpop.gremlin.driver.ser.AbstractGryoMessageSerializerV1d0;
+import org.apache.tinkerpop.gremlin.driver.ser.GraphSONMessageSerializerV1d0;
+import org.apache.tinkerpop.gremlin.driver.ser.GryoMessageSerializerV1d0;
 import org.apache.tinkerpop.gremlin.groovy.engine.GremlinExecutor;
-import org.apache.tinkerpop.gremlin.server.auth.AllowAllAuthenticator;
-import org.apache.tinkerpop.gremlin.server.handler.SaslAuthenticationHandler;
 import org.apache.tinkerpop.gremlin.server.auth.Authenticator;
 import org.apache.tinkerpop.gremlin.server.handler.IteratorHandler;
 import org.apache.tinkerpop.gremlin.server.handler.OpExecutorHandler;
@@ -42,7 +44,10 @@ import org.slf4j.LoggerFactory;
 import javax.net.ssl.SSLException;
 import java.io.File;
 import java.security.cert.CertificateException;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -50,7 +55,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Stream;
 
 /**
- * A base implementation for the {@code Channelizer} which does a basic configuration of the the pipeline, one that
+ * A base implementation for the {@code Channelizer} which does a basic configuration of the pipeline, one that
  * is generally common to virtually any Gremlin Server operation (i.e. where the server's purpose is to process
  * Gremlin scripts).
  * <p/>
@@ -62,6 +67,14 @@ import java.util.stream.Stream;
  */
 public abstract class AbstractChannelizer extends ChannelInitializer<SocketChannel> implements Channelizer {
     private static final Logger logger = LoggerFactory.getLogger(AbstractChannelizer.class);
+    protected static final List<Settings.SerializerSettings> DEFAULT_SERIALIZERS = Arrays.asList(
+            new Settings.SerializerSettings(GryoMessageSerializerV1d0.class.getName(), Collections.emptyMap()),
+            new Settings.SerializerSettings(GryoMessageSerializerV1d0.class.getName(), new HashMap<String,Object>(){{
+                put(AbstractGryoMessageSerializerV1d0.TOKEN_SERIALIZE_RESULT_TO_STRING, true);
+            }}),
+            new Settings.SerializerSettings(GraphSONMessageSerializerV1d0.class.getName(), Collections.emptyMap())
+    );
+
     protected Settings settings;
     protected GremlinExecutor gremlinExecutor;
     protected Optional<SslContext> sslContext;
@@ -153,7 +166,11 @@ public abstract class AbstractChannelizer extends ChannelInitializer<SocketChann
     }
 
     private void configureSerializers() {
-        this.settings.serializers.stream().map(config -> {
+        // grab some sensible defaults if no serializers are present in the config
+        final List<Settings.SerializerSettings> serializerSettings =
+                (null == this.settings.serializers || this.settings.serializers.isEmpty()) ? DEFAULT_SERIALIZERS : settings.serializers;
+
+        serializerSettings.stream().map(config -> {
             try {
                 final Class clazz = Class.forName(config.className);
                 if (!MessageSerializer.class.isAssignableFrom(clazz)) {
@@ -195,6 +212,12 @@ public abstract class AbstractChannelizer extends ChannelInitializer<SocketChann
 
     private SslContext createSSLContext(final Settings settings)  {
         final Settings.SslSettings sslSettings = settings.ssl;
+
+        if (sslSettings.getSslContext().isPresent()) {
+            logger.info("Using the SslContext override");
+            return sslSettings.getSslContext().get();
+        }
+
         final SslProvider provider = SslProvider.JDK;
 
         final SslContextBuilder builder;

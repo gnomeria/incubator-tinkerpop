@@ -20,8 +20,11 @@ package org.apache.tinkerpop.gremlin.driver;
 
 import org.apache.tinkerpop.gremlin.driver.exception.ConnectionException;
 import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
+import org.apache.tinkerpop.gremlin.process.traversal.Bytecode;
+import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalSource;
 import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,11 +34,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -53,19 +58,20 @@ public abstract class Client {
 
     protected final Cluster cluster;
     protected volatile boolean initialized;
+    protected final Client.Settings settings;
 
-    Client(final Cluster cluster) {
+    Client(final Cluster cluster, final Client.Settings settings) {
         this.cluster = cluster;
+        this.settings = settings;
     }
 
     /**
      * Makes any final changes to the builder and returns the constructed {@link RequestMessage}.  Implementers
      * may choose to override this message to append data to the request before sending.  By default, this method
-     * will simply call the {@link org.apache.tinkerpop.gremlin.driver.message.RequestMessage.Builder#create()} and return
-     * the {@link RequestMessage}.
+     * will simply return the {@code builder} passed in by the caller.
      */
-    public RequestMessage buildMessage(final RequestMessage.Builder builder) {
-        return builder.create();
+    public RequestMessage.Builder buildMessage(final RequestMessage.Builder builder) {
+        return builder;
     }
 
     /**
@@ -84,12 +90,85 @@ public abstract class Client {
     public abstract CompletableFuture<Void> closeAsync();
 
     /**
-     * Create a new {@code Client} that rebinds the specified {@link Graph} or {@link TraversalSource} name on the
+     * Create a new {@code Client} that aliases the specified {@link Graph} or {@link TraversalSource} name on the
+     * server to a variable called "g" for the context of the requests made through that {@code Client}.
+     *
+     * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
+     * @deprecated As of release 3.1.0, replaced by {@link #alias(String)}
+     */
+    @Deprecated
+    public Client rebind(final String graphOrTraversalSource) {
+        return alias(graphOrTraversalSource);
+    }
+
+    /**
+     * Create a new {@code Client} that aliases the specified {@link Graph} or {@link TraversalSource} name on the
      * server to a variable called "g" for the context of the requests made through that {@code Client}.
      *
      * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
      */
-    public abstract Client rebind(final String graphOrTraversalSource);
+    public Client alias(final String graphOrTraversalSource) {
+        return alias(makeDefaultAliasMap(graphOrTraversalSource));
+    }
+
+    /**
+     * Creates a {@code Client} that supplies the specified set of aliases, thus allowing the user to re-name
+     * one or more globally defined {@link Graph} or {@link TraversalSource} server bindings for the context of
+     * the created {@code Client}.
+     */
+    @Deprecated
+    public Client rebind(final Map<String,String> rebindings) {
+        return alias(rebindings);
+    }
+
+    /**
+     * Creates a {@code Client} that supplies the specified set of aliases, thus allowing the user to re-name
+     * one or more globally defined {@link Graph} or {@link TraversalSource} server bindings for the context of
+     * the created {@code Client}.
+     */
+    public Client alias(final Map<String,String> aliases) {
+        return new AliasClusteredClient(this, aliases, settings);
+    }
+
+    /**
+     * Submit a {@link Traversal} to the server for remote execution.
+     */
+    public ResultSet submit(final Traversal traversal) {
+        try {
+            return submitAsync(traversal).get();
+        } catch (UnsupportedOperationException uoe) {
+            throw uoe;
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    /**
+     * An asynchronous version of {@link #submit(Traversal)}.
+     */
+    public CompletableFuture<ResultSet> submitAsync(final Traversal traversal) {
+        throw new UnsupportedOperationException("This implementation does not support Traversal submission - use a sessionless Client created with from the alias() method");
+    }
+
+    /**
+     * Submit a {@link Bytecode} to the server for remote execution.
+     */
+    public ResultSet submit(final Bytecode bytecode) {
+        try {
+            return submitAsync(bytecode).get();
+        } catch (UnsupportedOperationException uoe) {
+            throw uoe;
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    /**
+     * An asynchronous version of {@link #submit(Traversal)}.
+     */
+    public CompletableFuture<ResultSet> submitAsync(final Bytecode bytecode) {
+        throw new UnsupportedOperationException("This implementation does not support Traversal submission - use a sessionless Client created with from the alias() method");
+    }
 
     /**
      * Initializes the client which typically means that a connection is established to the server.  Depending on the
@@ -160,13 +239,61 @@ public abstract class Client {
 
         Optional.ofNullable(parameters).ifPresent(params -> request.addArg(Tokens.ARGS_BINDINGS, parameters));
 
-        return submitAsync(buildMessage(request));
+        return submitAsync(buildMessage(request).create());
+    }
+
+    /**
+     * The asynchronous version of {@link #submit(String, Map)}} where the returned future will complete when the
+     * write of the request completes.
+     *
+     * @param gremlin the gremlin script to execute
+     * @param parameters a map of parameters that will be bound to the script on execution
+     * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
+     */
+    public CompletableFuture<ResultSet> submitAsync(final String gremlin, final String graphOrTraversalSource,
+                                                    final Map<String, Object> parameters) {
+        final RequestMessage.Builder request = RequestMessage.build(Tokens.OPS_EVAL)
+                .add(Tokens.ARGS_GREMLIN, gremlin)
+                .add(Tokens.ARGS_BATCH_SIZE, cluster.connectionPoolSettings().resultIterationBatchSize);
+
+        Optional.ofNullable(parameters).ifPresent(params -> request.addArg(Tokens.ARGS_BINDINGS, parameters));
+
+        if (graphOrTraversalSource != null && !graphOrTraversalSource.isEmpty())
+            request.addArg(Tokens.ARGS_ALIASES, makeDefaultAliasMap(graphOrTraversalSource));
+
+        return submitAsync(buildMessage(request).create());
+    }
+
+    /**
+     * The asynchronous version of {@link #submit(String, Map)}} where the returned future will complete when the
+     * write of the request completes.
+     *
+     * @param gremlin the gremlin script to execute
+     * @param parameters a map of parameters that will be bound to the script on execution
+     * @param aliases aliases the specified global Gremlin Server variable some other name that then be used in the
+     *                script where the key is the alias name and the value represents the global variable on the
+     *                server
+     */
+    public CompletableFuture<ResultSet> submitAsync(final String gremlin, final Map<String,String> aliases,
+                                                    final Map<String, Object> parameters) {
+        final RequestMessage.Builder request = RequestMessage.build(Tokens.OPS_EVAL)
+                .add(Tokens.ARGS_GREMLIN, gremlin)
+                .add(Tokens.ARGS_BATCH_SIZE, cluster.connectionPoolSettings().resultIterationBatchSize);
+
+        Optional.ofNullable(parameters).ifPresent(params -> request.addArg(Tokens.ARGS_BINDINGS, parameters));
+
+        if (aliases != null && !aliases.isEmpty())
+            request.addArg(Tokens.ARGS_ALIASES, aliases);
+
+        return submitAsync(buildMessage(request).create());
     }
 
     /**
      * A low-level method that allows the submission of a manually constructed {@link RequestMessage}.
      */
     public CompletableFuture<ResultSet> submitAsync(final RequestMessage msg) {
+        if (isClosing()) throw new IllegalStateException("Client has been closed");
+
         if (!initialized)
             init();
 
@@ -191,11 +318,33 @@ public abstract class Client {
         }
     }
 
+    public abstract boolean isClosing();
+
     /**
      * Closes the client by making a synchronous call to {@link #closeAsync()}.
      */
     public void close() {
         closeAsync().join();
+    }
+
+    /**
+     * Gets the {@link Client.Settings}.
+     */
+    public Settings getSettings() {
+        return settings;
+    }
+
+    /**
+     * Gets the {@link Cluster} that spawned this {@code Client}.
+     */
+    public Cluster getCluster() {
+        return cluster;
+    }
+
+    protected Map<String,String> makeDefaultAliasMap(final String graphOrTraversalSource) {
+        final Map<String,String> aliases = new HashMap<>();
+        aliases.put("g", graphOrTraversalSource);
+        return aliases;
     }
 
     /**
@@ -206,9 +355,15 @@ public abstract class Client {
     public final static class ClusteredClient extends Client {
 
         private ConcurrentMap<Host, ConnectionPool> hostConnectionPools = new ConcurrentHashMap<>();
+        private final AtomicReference<CompletableFuture<Void>> closing = new AtomicReference<>(null);
 
-        ClusteredClient(final Cluster cluster) {
-            super(cluster);
+        ClusteredClient(final Cluster cluster, final Client.Settings settings) {
+            super(cluster, settings);
+        }
+
+        @Override
+        public boolean isClosing() {
+            return closing.get() != null;
         }
 
         /**
@@ -256,26 +411,70 @@ public abstract class Client {
             Optional.ofNullable(parameters).ifPresent(params -> request.addArg(Tokens.ARGS_BINDINGS, parameters));
 
             if (graphOrTraversalSource != null && !graphOrTraversalSource.isEmpty())
-                request.addArg(Tokens.ARGS_REBINDINGS, makeRebindings(graphOrTraversalSource));
+                request.addArg(Tokens.ARGS_ALIASES, makeDefaultAliasMap(graphOrTraversalSource));
 
-            return submitAsync(buildMessage(request));
+            return submitAsync(buildMessage(request).create());
+        }
+
+        /**
+         * The asynchronous version of {@link #submit(String, Map)}} where the returned future will complete when the
+         * write of the request completes.
+         *
+         * @param gremlin the gremlin script to execute
+         * @param parameters a map of parameters that will be bound to the script on execution
+         * @param aliases aliases the specified global Gremlin Server variable some other name that then be used in the
+         *                script where the key is the alias name and the value represents the global variable on the
+         *                server
+         */
+        public CompletableFuture<ResultSet> submitAsync(final String gremlin, final Map<String,String> aliases,
+                                                        final Map<String, Object> parameters) {
+            final RequestMessage.Builder request = RequestMessage.build(Tokens.OPS_EVAL)
+                    .add(Tokens.ARGS_GREMLIN, gremlin)
+                    .add(Tokens.ARGS_BATCH_SIZE, cluster.connectionPoolSettings().resultIterationBatchSize);
+
+            Optional.ofNullable(parameters).ifPresent(params -> request.addArg(Tokens.ARGS_BINDINGS, parameters));
+
+            if (aliases != null && !aliases.isEmpty())
+                request.addArg(Tokens.ARGS_ALIASES, aliases);
+
+            return submitAsync(buildMessage(request).create());
         }
 
         /**
          * {@inheritDoc}
          */
         @Override
+        @Deprecated
         public Client rebind(final String graphOrTraversalSource) {
-            return new ReboundClusteredClient(this, graphOrTraversalSource);
+            return alias(graphOrTraversalSource);
         }
 
         /**
-         * Creates a {@code Client} that supplies the specified set of rebindings, thus allowing the user to re-name
+         * {@inheritDoc}
+         */
+        @Override
+        public Client alias(final String graphOrTraversalSource) {
+            final Map<String,String> aliases = new HashMap<>();
+            aliases.put("g", graphOrTraversalSource);
+            return alias(aliases);
+        }
+
+        /**
+         * Creates a {@code Client} that supplies the specified set of aliases, thus allowing the user to re-name
          * one or more globally defined {@link Graph} or {@link TraversalSource} server bindings for the context of
          * the created {@code Client}.
          */
+        @Deprecated
         public Client rebind(final Map<String,String> rebindings) {
-            return new ReboundClusteredClient(this, rebindings);
+            return alias(rebindings);
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public Client alias(final Map<String,String> aliases) {
+            return new AliasClusteredClient(this, aliases, settings);
         }
 
         /**
@@ -284,10 +483,22 @@ public abstract class Client {
          */
         @Override
         protected Connection chooseConnection(final RequestMessage msg) throws TimeoutException, ConnectionException {
-            final Iterator<Host> possibleHosts = this.cluster.loadBalancingStrategy().select(msg);
-            if (!possibleHosts.hasNext()) throw new TimeoutException("Timed out waiting for an available host.");
+            final Iterator<Host> possibleHosts;
+            if (msg.optionalArgs(Tokens.ARGS_HOST).isPresent()) {
+                // TODO: not sure what should be done if unavailable - select new host and re-submit traversal?
+                final Host host = (Host) msg.getArgs().get(Tokens.ARGS_HOST);
+                msg.getArgs().remove(Tokens.ARGS_HOST);
+                possibleHosts = IteratorUtils.of(host);
+            } else {
+                possibleHosts = this.cluster.loadBalancingStrategy().select(msg);
+            }
 
-            final Host bestHost = this.cluster.loadBalancingStrategy().select(msg).next();
+            // you can get no possible hosts in more than a few situations. perhaps the servers are just all down.
+            // or perhaps the client is not configured properly (disables ssl when ssl is enabled on the server).
+            if (!possibleHosts.hasNext())
+                throw new TimeoutException("Timed out while waiting for an available host - check the client configuration and connectivity to the server if this message persists");
+
+            final Host bestHost = possibleHosts.next();
             final ConnectionPool pool = hostConnectionPools.get(bestHost);
             return pool.borrowConnection(cluster.connectionPoolSettings().maxWaitForConnection, TimeUnit.MILLISECONDS);
         }
@@ -300,7 +511,7 @@ public abstract class Client {
             cluster.allHosts().forEach(host -> {
                 try {
                     // hosts that don't initialize connection pools will come up as a dead host
-                    hostConnectionPools.put(host, new ConnectionPool(host, cluster));
+                    hostConnectionPools.put(host, new ConnectionPool(host, this));
 
                     // added a new host to the cluster so let the load-balancer know
                     this.cluster.loadBalancingStrategy().onNew(host);
@@ -315,16 +526,14 @@ public abstract class Client {
          * Closes all the connection pools on all hosts.
          */
         @Override
-        public CompletableFuture<Void> closeAsync() {
+        public synchronized CompletableFuture<Void> closeAsync() {
+            if (closing.get() != null)
+                return closing.get();
+
             final CompletableFuture[] poolCloseFutures = new CompletableFuture[hostConnectionPools.size()];
             hostConnectionPools.values().stream().map(ConnectionPool::closeAsync).collect(Collectors.toList()).toArray(poolCloseFutures);
-            return CompletableFuture.allOf(poolCloseFutures);
-        }
-
-        private Map<String,String> makeRebindings(final String graphOrTraversalSource) {
-            final Map<String,String> rebindings = new HashMap<>();
-            rebindings.put("g", graphOrTraversalSource);
-            return rebindings;
+            closing.set(CompletableFuture.allOf(poolCloseFutures));
+            return closing.get();
         }
     }
 
@@ -332,37 +541,73 @@ public abstract class Client {
      * Uses a {@link org.apache.tinkerpop.gremlin.driver.Client.ClusteredClient} that rebinds requests to a
      * specified {@link Graph} or {@link TraversalSource} instances on the server-side.
      */
-    public final static class ReboundClusteredClient extends Client {
-        private final ClusteredClient clusteredClient;
-        private final Map<String,String> rebindings = new HashMap<>();
+    public final static class AliasClusteredClient extends ReboundClusteredClient {
+        public AliasClusteredClient(final Client client, final Map<String, String> rebindings,
+                                    final Client.Settings settings) {
+            super(client, rebindings, settings);
+        }
+    }
+
+    /**
+     * Uses a {@link org.apache.tinkerpop.gremlin.driver.Client.ClusteredClient} that rebinds requests to a
+     * specified {@link Graph} or {@link TraversalSource} instances on the server-side.
+     *
+     * @deprecated As of release 3.1.1-incubating, replaced by {@link AliasClusteredClient}.
+     */
+    @Deprecated
+    public static class ReboundClusteredClient extends Client {
+        private final Client client;
+        private final Map<String,String> aliases = new HashMap<>();
         final CompletableFuture<Void> close = new CompletableFuture<>();
 
-        ReboundClusteredClient(final ClusteredClient clusteredClient, final String graphOrTraversalSource) {
-            super(clusteredClient.cluster);
-            this.clusteredClient = clusteredClient;
-            rebindings.put("g", graphOrTraversalSource);
+        ReboundClusteredClient(final Client client, final Map<String,String> rebindings,
+                               final Client.Settings settings) {
+            super(client.cluster, settings);
+            this.client = client;
+            this.aliases.putAll(rebindings);
         }
 
-        ReboundClusteredClient(final ClusteredClient clusteredClient, final Map<String,String> rebindings) {
-            super(clusteredClient.cluster);
-            this.clusteredClient = clusteredClient;
-            this.rebindings.putAll(rebindings);
+        @Override
+        public CompletableFuture<ResultSet> submitAsync(final Bytecode bytecode) {
+            try {
+                return submitAsync(buildMessage(RequestMessage.build(Tokens.OPS_BYTECODE)
+                        .processor("traversal").addArg(Tokens.ARGS_GREMLIN, bytecode)).create());
+            } catch (Exception ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+
+        @Override
+        public CompletableFuture<ResultSet> submitAsync(final RequestMessage msg) {
+            final RequestMessage.Builder builder = RequestMessage.from(msg);
+            if (!aliases.isEmpty())
+                builder.addArg(Tokens.ARGS_ALIASES, aliases);
+
+            return super.submitAsync(builder.create());
+        }
+
+        @Override
+        public CompletableFuture<ResultSet> submitAsync(final Traversal traversal) {
+            return submitAsync(traversal.asAdmin().getBytecode());
         }
 
         @Override
         public synchronized Client init() {
-            // no init required
             if (close.isDone()) throw new IllegalStateException("Client is closed");
+
+            // the underlying client may not have been init'd
+            client.init();
+
             return this;
         }
 
         @Override
-        public RequestMessage buildMessage(final RequestMessage.Builder builder) {
+        public RequestMessage.Builder buildMessage(final RequestMessage.Builder builder) {
             if (close.isDone()) throw new IllegalStateException("Client is closed");
-            if (!rebindings.isEmpty())
-                builder.addArg(Tokens.ARGS_REBINDINGS, rebindings);
+            if (!aliases.isEmpty())
+                builder.addArg(Tokens.ARGS_ALIASES, aliases);
 
-            return builder.create();
+            return client.buildMessage(builder);
         }
 
         @Override
@@ -377,7 +622,7 @@ public abstract class Client {
         @Override
         protected Connection chooseConnection(final RequestMessage msg) throws TimeoutException, ConnectionException {
             if (close.isDone()) throw new IllegalStateException("Client is closed");
-            return clusteredClient.chooseConnection(msg);
+            return client.chooseConnection(msg);
         }
 
         /**
@@ -385,15 +630,32 @@ public abstract class Client {
          * close on the {@code Client} that created it.
          */
         @Override
-        public CompletableFuture<Void> closeAsync() {
+        public synchronized CompletableFuture<Void> closeAsync() {
             close.complete(null);
             return close;
         }
 
         @Override
+        public boolean isClosing() {
+            return close.isDone();
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        @Deprecated
         public Client rebind(final String graphOrTraversalSource) {
+            return alias(graphOrTraversalSource);
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public Client alias(final Map<String, String> aliases) {
             if (close.isDone()) throw new IllegalStateException("Client is closed");
-            return new ReboundClusteredClient(clusteredClient, graphOrTraversalSource);
+            return new AliasClusteredClient(client, aliases, settings);
         }
     }
 
@@ -404,27 +666,31 @@ public abstract class Client {
      */
     public final static class SessionedClient extends Client {
         private final String sessionId;
+        private final boolean manageTransactions;
 
         private ConnectionPool connectionPool;
 
-        SessionedClient(final Cluster cluster, final String sessionId) {
-            super(cluster);
-            this.sessionId = sessionId;
+        private final AtomicReference<CompletableFuture<Void>> closing = new AtomicReference<>(null);
+
+        SessionedClient(final Cluster cluster, final Client.Settings settings) {
+            super(cluster, settings);
+            this.sessionId = settings.getSession().get().sessionId;
+            this.manageTransactions = settings.getSession().get().manageTransactions;
         }
 
-        @Override
-        public Client rebind(final String graphOrTraversalSourceName){
-            throw new UnsupportedOperationException("Sessioned client do no support rebinding");
+        String getSessionId() {
+            return sessionId;
         }
 
         /**
          * Adds the {@link Tokens#ARGS_SESSION} value to every {@link RequestMessage}.
          */
         @Override
-        public RequestMessage buildMessage(final RequestMessage.Builder builder) {
+        public RequestMessage.Builder buildMessage(final RequestMessage.Builder builder) {
             builder.processor("session");
             builder.addArg(Tokens.ARGS_SESSION, sessionId);
-            return builder.create();
+            builder.addArg(Tokens.ARGS_MANAGE_TRANSACTION, manageTransactions);
+            return builder;
         }
 
         /**
@@ -443,17 +709,154 @@ public abstract class Client {
             // chooses an available host at random
             final List<Host> hosts = cluster.allHosts()
                     .stream().filter(Host::isAvailable).collect(Collectors.toList());
+            if (hosts.isEmpty()) throw new IllegalStateException("No available host in the cluster");
             Collections.shuffle(hosts);
             final Host host = hosts.get(0);
-            connectionPool = new ConnectionPool(host, cluster);
+            connectionPool = new ConnectionPool(host, this, Optional.of(1), Optional.of(1));
+        }
+
+        @Override
+        public boolean isClosing() {
+            return closing.get() != null;
         }
 
         /**
          * Close the bound {@link ConnectionPool}.
          */
         @Override
-        public CompletableFuture<Void> closeAsync() {
-            return connectionPool.closeAsync();
+        public synchronized CompletableFuture<Void> closeAsync() {
+            if (closing.get() != null)
+                return closing.get();
+
+            final CompletableFuture<Void> connectionPoolClose = connectionPool.closeAsync();
+            closing.set(connectionPoolClose);
+            return connectionPoolClose;
+        }
+    }
+
+    /**
+     * Settings given to {@link Cluster#connect(Settings)} that configures how a {@link Client} will behave.
+     */
+    public static class Settings {
+        private final Optional<SessionSettings> session;
+
+        private Settings(final Builder builder) {
+            this.session = builder.session;
+        }
+
+        public static Builder build() {
+            return new Builder();
+        }
+
+        /**
+         * Determines if the {@link Client} is to be constructed with a session. If the value is present, then a
+         * session is expected.
+         */
+        public Optional<SessionSettings> getSession() {
+            return session;
+        }
+
+        public static class Builder {
+            private Optional<SessionSettings> session = Optional.empty();
+
+            private Builder() {}
+
+            /**
+             * Enables a session. By default this will create a random session name and configure transactions to be
+             * unmanaged. This method will override settings provided by calls to the other overloads of
+             * {@code useSession}.
+             */
+            public Builder useSession(final boolean enabled) {
+                session = enabled ? Optional.of(SessionSettings.build().create()) : Optional.empty();
+                return this;
+            }
+
+            /**
+             * Enables a session. By default this will create a session with the provided name and configure
+             * transactions to be unmanaged. This method will override settings provided by calls to the other
+             * overloads of {@code useSession}.
+             */
+            public Builder useSession(final String sessionId) {
+                session = sessionId != null && !sessionId.isEmpty() ?
+                        Optional.of(SessionSettings.build().sessionId(sessionId).create()) : Optional.empty();
+                return this;
+            }
+
+            /**
+             * Enables a session. This method will override settings provided by calls to the other overloads of
+             * {@code useSession}.
+             */
+            public Builder useSession(final SessionSettings settings) {
+                session = Optional.ofNullable(settings);
+                return this;
+            }
+
+            public Settings create() {
+                return new Settings(this);
+            }
+
+        }
+    }
+
+    /**
+     * Settings for a {@link Client} that involve a session.
+     */
+    public static class SessionSettings {
+        private final boolean manageTransactions;
+        private final String sessionId;
+
+        private SessionSettings(final Builder builder) {
+            manageTransactions = builder.manageTransactions;
+            sessionId = builder.sessionId;
+        }
+
+        /**
+         * If enabled, transactions will be "managed" such that each request will represent a complete transaction.
+         */
+        public boolean manageTransactions() {
+            return manageTransactions;
+        }
+
+        /**
+         * Provides the identifier of the session.
+         */
+        public String getSessionId() {
+            return sessionId;
+        }
+
+        public static SessionSettings.Builder build() {
+            return new SessionSettings.Builder();
+        }
+
+        public static class Builder {
+            private boolean manageTransactions = false;
+            private String sessionId = UUID.randomUUID().toString();
+
+            private Builder() {}
+
+            /**
+             * If enabled, transactions will be "managed" such that each request will represent a complete transaction.
+             * By default this value is {@code false}.
+             */
+            public Builder manageTransactions(final boolean manage) {
+                manageTransactions = manage;
+                return this;
+            }
+
+            /**
+             * Provides the identifier of the session. This value cannot be null or empty. By default it is set to
+             * a random {@code UUID}.
+             */
+            public Builder sessionId(final String sessionId) {
+                if (null == sessionId || sessionId.isEmpty())
+                    throw new IllegalArgumentException("sessionId cannot be null or empty");
+                this.sessionId = sessionId;
+                return this;
+            }
+
+            public SessionSettings create() {
+                return new SessionSettings(this);
+            }
         }
     }
 }

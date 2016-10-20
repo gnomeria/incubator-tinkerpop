@@ -31,7 +31,7 @@ public class MutableMetrics extends ImmutableMetrics implements Cloneable {
 
     // Note: if you add new members then you probably need to add them to the copy constructor;
 
-    private long tempTime = -1l;
+    private long tempTime = -1L;
 
     protected MutableMetrics() {
         // necessary for gryo serialization
@@ -42,6 +42,17 @@ public class MutableMetrics extends ImmutableMetrics implements Cloneable {
         this.name = name;
     }
 
+    /**
+     * Create a {@code MutableMetrics} from an immutable one.
+     */
+    public MutableMetrics(final Metrics other) {
+        this.id = other.getId();
+        this.name = other.getName();
+        this.annotations.putAll(other.getAnnotations());
+        this.durationNs = other.getDuration(TimeUnit.NANOSECONDS);
+        other.getCounts().forEach((key, count) -> this.counts.put(key, new AtomicLong(count)));
+        other.getNested().forEach(nested -> this.addNested(new MutableMetrics(nested)));
+    }
 
     public void addNested(MutableMetrics metrics) {
         this.nested.put(metrics.getId(), metrics);
@@ -157,9 +168,10 @@ public class MutableMetrics extends ImmutableMetrics implements Cloneable {
         return clone;
     }
 
-    private void copyMembers(final ImmutableMetrics clone) {
+    protected void copyMembers(final ImmutableMetrics clone) {
         clone.id = this.id;
         clone.name = this.name;
+        // Note: This value is overwritten in the DependantMutableMetrics overridden copyMembers method.
         clone.durationNs = this.durationNs;
         for (Map.Entry<String, AtomicLong> c : this.counts.entrySet()) {
             clone.counts.put(c.getKey(), new AtomicLong(c.getValue().get()));
@@ -177,4 +189,9 @@ public class MutableMetrics extends ImmutableMetrics implements Cloneable {
         return clone;
     }
 
+    public void finish(long bulk) {
+        stop();
+        incrementCount(TraversalMetrics.TRAVERSER_COUNT_ID, 1);
+        incrementCount(TraversalMetrics.ELEMENT_COUNT_ID, bulk);
+    }
 }

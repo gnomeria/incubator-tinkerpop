@@ -71,6 +71,7 @@ import java.util.stream.Stream;
 @Graph.OptIn(Graph.OptIn.SUITE_GROOVY_ENVIRONMENT_INTEGRATE)
 @Graph.OptIn(Graph.OptIn.SUITE_GROOVY_ENVIRONMENT_PERFORMANCE)
 @Graph.OptIn("org.apache.tinkerpop.gremlin.neo4j.NativeNeo4jSuite")
+@Graph.OptIn("org.apache.tinkerpop.gremlin.neo4j.process.traversal.strategy.Neo4jStrategySuite")
 public final class Neo4jGraph implements Graph, WrappedGraph<Neo4jGraphAPI> {
 
     public static final Logger LOGGER = LoggerFactory.getLogger(Neo4jGraph.class);
@@ -269,7 +270,7 @@ public final class Neo4jGraph implements Graph, WrappedGraph<Neo4jGraphAPI> {
     }
 
     /**
-     * This implementation of {@code close} will also close the current transaction on the the thread, but it
+     * This implementation of {@code close} will also close the current transaction on the thread, but it
      * is up to the caller to deal with dangling transactions in other threads prior to calling this method.
      */
     @Override
@@ -331,24 +332,22 @@ public final class Neo4jGraph implements Graph, WrappedGraph<Neo4jGraphAPI> {
 
         @Override
         public void doCommit() throws TransactionException {
-            try {
-                threadLocalTx.get().success();
+            try (Neo4jTx tx = threadLocalTx.get()) {
+                tx.success();
             } catch (Exception ex) {
                 throw new TransactionException(ex);
             } finally {
-                threadLocalTx.get().close();
                 threadLocalTx.remove();
             }
         }
 
         @Override
         public void doRollback() throws TransactionException {
-            try {
-                threadLocalTx.get().failure();
+            try (Neo4jTx tx = threadLocalTx.get()) {
+                tx.failure();
             } catch (Exception e) {
                 throw new TransactionException(e);
             } finally {
-                threadLocalTx.get().close();
                 threadLocalTx.remove();
             }
         }

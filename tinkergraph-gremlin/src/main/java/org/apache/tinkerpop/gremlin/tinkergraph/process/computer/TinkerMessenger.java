@@ -29,6 +29,7 @@ import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalHelper;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.apache.tinkerpop.gremlin.util.iterator.MultiIterator;
 
 import java.util.Iterator;
@@ -93,14 +94,17 @@ public final class TinkerMessenger<M> implements Messenger<M> {
     }
 
     private void addMessage(final Vertex vertex, final M message) {
-        final Queue<M> queue = this.messageBoard.sendMessages.computeIfAbsent(vertex, v -> new ConcurrentLinkedQueue<>());
-        queue.add(null != this.combiner && !queue.isEmpty() ? this.combiner.combine(queue.remove(), message) : message);
+        this.messageBoard.sendMessages.compute(vertex, (v, queue) -> {
+            if (null == queue) queue = new ConcurrentLinkedQueue<>();
+            queue.add(null != this.combiner && !queue.isEmpty() ? this.combiner.combine(queue.remove(), message) : message);
+            return queue;
+        });
     }
 
     ///////////
 
     private static <T extends Traversal.Admin<Vertex, Edge>> T setVertexStart(final Traversal.Admin<Vertex, Edge> incidentTraversal, final Vertex vertex) {
-        incidentTraversal.addStep(0, new StartStep<>(incidentTraversal, vertex));
+        incidentTraversal.addStart(incidentTraversal.getTraverserGenerator().generate(vertex,incidentTraversal.getStartStep(),1l));
         return (T) incidentTraversal;
     }
 

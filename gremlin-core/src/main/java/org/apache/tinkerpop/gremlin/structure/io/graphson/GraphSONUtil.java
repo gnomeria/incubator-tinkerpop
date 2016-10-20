@@ -18,10 +18,10 @@
  */
 package org.apache.tinkerpop.gremlin.structure.io.graphson;
 
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.databind.JsonSerializer;
-import com.fasterxml.jackson.databind.SerializerProvider;
-import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
+import org.apache.tinkerpop.shaded.jackson.core.JsonGenerator;
+import org.apache.tinkerpop.shaded.jackson.databind.JsonSerializer;
+import org.apache.tinkerpop.shaded.jackson.databind.SerializerProvider;
+import org.apache.tinkerpop.shaded.jackson.databind.jsontype.TypeSerializer;
 
 import java.io.IOException;
 
@@ -34,19 +34,62 @@ public final class GraphSONUtil {
 
     private GraphSONUtil() {}
 
+    public static void writeWithType(final Object object, final JsonGenerator jsonGenerator,
+                                     final SerializerProvider serializerProvider,
+                                     final TypeSerializer typeSerializer) throws IOException {
+        writeWithType(null, object, jsonGenerator, serializerProvider, typeSerializer);
+    }
+
     public static void writeWithType(final String key, final Object object, final JsonGenerator jsonGenerator,
                                      final SerializerProvider serializerProvider,
                                      final TypeSerializer typeSerializer) throws IOException {
         final JsonSerializer<Object> serializer = serializerProvider.findValueSerializer(object.getClass(), null);
         if (typeSerializer != null) {
             // serialize with types embedded
-            jsonGenerator.writeFieldName(key);
+            if (key != null && !key.isEmpty()) jsonGenerator.writeFieldName(key);
             serializer.serializeWithType(object, jsonGenerator, serializerProvider, typeSerializer);
         } else {
             // types are not embedded, but use the serializer when possible or else custom serializers will get
             // bypassed and you end up with the default jackson serializer when you don't want it.
-            jsonGenerator.writeFieldName(key);
+            if (key != null && !key.isEmpty()) jsonGenerator.writeFieldName(key);
             serializer.serialize(object, jsonGenerator, serializerProvider);
+        }
+    }
+
+    public static void writeStartObject(final Object o, final JsonGenerator jsonGenerator, final TypeSerializer typeSerializer) throws IOException {
+        if (typeSerializer != null)
+            typeSerializer.writeTypePrefixForObject(o, jsonGenerator);
+        else
+            jsonGenerator.writeStartObject();
+    }
+
+    public static void writeEndObject(final Object o, final JsonGenerator jsonGenerator, final TypeSerializer typeSerializer) throws IOException {
+        if (typeSerializer != null)
+            typeSerializer.writeTypeSuffixForObject(o, jsonGenerator);
+        else
+            jsonGenerator.writeEndObject();
+    }
+
+    public static void writeStartArray(final Object o, final JsonGenerator jsonGenerator, final TypeSerializer typeSerializer) throws IOException {
+        if (typeSerializer != null)
+            typeSerializer.writeTypePrefixForArray(o, jsonGenerator);
+        else
+            jsonGenerator.writeStartArray();
+    }
+
+
+    public static void writeEndArray(final Object o, final JsonGenerator jsonGenerator, final TypeSerializer typeSerializer) throws IOException {
+        if (typeSerializer != null)
+            typeSerializer.writeTypeSuffixForArray(o, jsonGenerator);
+        else
+            jsonGenerator.writeEndArray();
+    }
+
+    static void safeWriteObjectField(final JsonGenerator jsonGenerator, final String key, final Object value) {
+        try {
+            jsonGenerator.writeObjectField(key, value);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 }

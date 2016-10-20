@@ -19,8 +19,6 @@
 package org.apache.tinkerpop.gremlin.hadoop;
 
 import org.apache.commons.configuration.Configuration;
-import org.apache.giraph.conf.GiraphConstants;
-import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 import org.apache.tinkerpop.gremlin.AbstractGraphProvider;
 import org.apache.tinkerpop.gremlin.LoadGraphWith;
 import org.apache.tinkerpop.gremlin.TestHelper;
@@ -33,6 +31,7 @@ import org.apache.tinkerpop.gremlin.hadoop.structure.HadoopVertexProperty;
 import org.apache.tinkerpop.gremlin.hadoop.structure.io.graphson.GraphSONInputFormat;
 import org.apache.tinkerpop.gremlin.hadoop.structure.io.gryo.GryoInputFormat;
 import org.apache.tinkerpop.gremlin.hadoop.structure.io.gryo.GryoOutputFormat;
+import org.apache.tinkerpop.gremlin.process.computer.util.ComputerGraph;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONResourceAccess;
 import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoResourceAccess;
@@ -45,7 +44,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+
+import static org.apache.tinkerpop.gremlin.structure.io.gryo.kryoshim.KryoShimServiceLoader.KRYO_SHIM_SERVICE;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
@@ -54,7 +54,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class HadoopGraphProvider extends AbstractGraphProvider {
 
-    private static final Random RANDOM = new Random();
+    protected static final Random RANDOM = new Random();
     private boolean graphSONInput = false;
 
     public static Map<String, String> PATHS = new HashMap<>();
@@ -65,6 +65,13 @@ public class HadoopGraphProvider extends AbstractGraphProvider {
         add(HadoopProperty.class);
         add(HadoopVertex.class);
         add(HadoopVertexProperty.class);
+        add(ComputerGraph.class);
+        add(ComputerGraph.ComputerElement.class);
+        add(ComputerGraph.ComputerVertex.class);
+        add(ComputerGraph.ComputerEdge.class);
+        add(ComputerGraph.ComputerVertexProperty.class);
+        add(ComputerGraph.ComputerAdjacentVertex.class);
+        add(ComputerGraph.ComputerProperty.class);
     }};
 
     static {
@@ -75,7 +82,7 @@ public class HadoopGraphProvider extends AbstractGraphProvider {
                     "tinkerpop-classic.kryo",
                     "tinkerpop-crew.kryo");
             for (final String fileName : kryoResources) {
-                PATHS.put(fileName, TestHelper.generateTempFileFromResource(GryoResourceAccess.class, fileName, "").getAbsolutePath());
+                PATHS.put(fileName, TestHelper.generateTempFileFromResource(GryoResourceAccess.class, fileName, "").getAbsolutePath().replace('\\', '/'));
             }
 
             final List<String> graphsonResources = Arrays.asList(
@@ -84,7 +91,7 @@ public class HadoopGraphProvider extends AbstractGraphProvider {
                     "tinkerpop-classic.json",
                     "tinkerpop-crew.json");
             for (final String fileName : graphsonResources) {
-                PATHS.put(fileName, TestHelper.generateTempFileFromResource(GraphSONResourceAccess.class, fileName, "").getAbsolutePath());
+                PATHS.put(fileName, TestHelper.generateTempFileFromResource(GraphSONResourceAccess.class, fileName, "").getAbsolutePath().replace('\\', '/'));
             }
 
             final List<String> scriptResources = Arrays.asList(
@@ -95,7 +102,7 @@ public class HadoopGraphProvider extends AbstractGraphProvider {
                     "script-input-grateful-dead.groovy",
                     "script-output-grateful-dead.groovy");
             for (final String fileName : scriptResources) {
-                PATHS.put(fileName, TestHelper.generateTempFileFromResource(ScriptResourceAccess.class, fileName, "").getAbsolutePath());
+                PATHS.put(fileName, TestHelper.generateTempFileFromResource(ScriptResourceAccess.class, fileName, "").getAbsolutePath().replace('\\', '/'));
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -104,31 +111,14 @@ public class HadoopGraphProvider extends AbstractGraphProvider {
 
     @Override
     public Map<String, Object> getBaseConfiguration(final String graphName, final Class<?> test, final String testMethodName, final LoadGraphWith.GraphData loadGraphWith) {
+        System.clearProperty(KRYO_SHIM_SERVICE);
         this.graphSONInput = RANDOM.nextBoolean();
         return new HashMap<String, Object>() {{
             put(Graph.GRAPH, HadoopGraph.class.getName());
-            put(Constants.GREMLIN_HADOOP_GRAPH_INPUT_FORMAT, graphSONInput ? GraphSONInputFormat.class.getCanonicalName() : GryoInputFormat.class.getCanonicalName());
-            put(Constants.GREMLIN_HADOOP_GRAPH_OUTPUT_FORMAT, GryoOutputFormat.class.getCanonicalName());
-            put(Constants.GREMLIN_HADOOP_OUTPUT_LOCATION, "hadoop-gremlin/target/test-output");
+            put(Constants.GREMLIN_HADOOP_GRAPH_READER, graphSONInput ? GraphSONInputFormat.class.getCanonicalName() : GryoInputFormat.class.getCanonicalName());
+            put(Constants.GREMLIN_HADOOP_GRAPH_WRITER, GryoOutputFormat.class.getCanonicalName());
+            put(Constants.GREMLIN_HADOOP_OUTPUT_LOCATION, getWorkingDirectory());
             put(Constants.GREMLIN_HADOOP_JARS_IN_DISTRIBUTED_CACHE, false);
-            /// giraph configuration
-            put(GiraphConstants.MIN_WORKERS, 1);
-            put(GiraphConstants.MAX_WORKERS, 1);
-            put(GiraphConstants.SPLIT_MASTER_WORKER.getKey(), false);
-            put(GiraphConstants.ZOOKEEPER_SERVER_PORT.getKey(), 2181);  // you must have a local zookeeper running on this port
-            put(GiraphConstants.NETTY_SERVER_USE_EXECUTION_HANDLER.getKey(), false); // this prevents so many integration tests running out of threads
-            put(GiraphConstants.NETTY_CLIENT_USE_EXECUTION_HANDLER.getKey(), false); // this prevents so many integration tests running out of threads
-            put(GiraphConstants.NUM_INPUT_THREADS.getKey(), 3);
-            put(GiraphConstants.NUM_COMPUTE_THREADS.getKey(), 3);
-            put(GiraphConstants.MAX_MASTER_SUPERSTEP_WAIT_MSECS.getKey(), TimeUnit.MINUTES.toMillis(60L));
-            put("mapred.reduce.tasks", 4);
-            //put("giraph.vertexOutputFormatThreadSafe", false);
-            //put("giraph.numOutputThreads", 3);
-
-            /// spark configuration
-            put("spark.master", "local[4]");
-            put("spark.serializer", "org.apache.spark.serializer.KryoSerializer");
-            // put("spark.kryo.registrationRequired",true);
         }};
     }
 

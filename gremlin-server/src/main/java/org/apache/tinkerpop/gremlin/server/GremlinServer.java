@@ -18,10 +18,6 @@
  */
 package org.apache.tinkerpop.gremlin.server;
 
-import org.apache.tinkerpop.gremlin.server.util.LifeCycleHook;
-import org.apache.tinkerpop.gremlin.server.util.MetricManager;
-import org.apache.tinkerpop.gremlin.server.util.ServerGremlinExecutor;
-import org.apache.tinkerpop.gremlin.server.util.ThreadFactoryUtil;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
@@ -29,11 +25,19 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.epoll.EpollEventLoopGroup;
+import io.netty.channel.epoll.EpollServerSocketChannel;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.util.concurrent.GenericFutureListener;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import io.netty.util.internal.logging.Slf4JLoggerFactory;
+import org.apache.commons.lang3.SystemUtils;
+import org.apache.tinkerpop.gremlin.server.op.OpLoader;
+import org.apache.tinkerpop.gremlin.server.util.LifeCycleHook;
+import org.apache.tinkerpop.gremlin.server.util.MetricManager;
+import org.apache.tinkerpop.gremlin.server.util.ServerGremlinExecutor;
+import org.apache.tinkerpop.gremlin.server.util.ThreadFactoryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,23 +74,44 @@ public class GremlinServer {
     private final EventLoopGroup workerGroup;
     private final ExecutorService gremlinExecutorService;
     private final ServerGremlinExecutor<EventLoopGroup> serverGremlinExecutor;
+    private final boolean isEpollEnabled;
 
     /**
      * Construct a Gremlin Server instance from {@link Settings}.
      */
     public GremlinServer(final Settings settings) {
+        settings.optionalMetrics().ifPresent(GremlinServer::configureMetrics);
         this.settings = settings;
+        provideDefaultForGremlinPoolSize(settings);
+        this.isEpollEnabled = settings.useEpollEventLoop && SystemUtils.IS_OS_LINUX;
+        if(settings.useEpollEventLoop && !SystemUtils.IS_OS_LINUX){
+            logger.warn("cannot use epoll in non-linux env, falling back to NIO");
+        }
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> this.stop().join(), SERVER_THREAD_PREFIX + "shutdown"));
 
         final ThreadFactory threadFactoryBoss = ThreadFactoryUtil.create("boss-%d");
-        bossGroup = new NioEventLoopGroup(settings.threadPoolBoss, threadFactoryBoss);
+        // if linux os use epoll else fallback to nio based eventloop
+        // epoll helps in reducing GC and has better  performance
+        // http://netty.io/wiki/native-transports.html
+        if(isEpollEnabled){
+            bossGroup = new EpollEventLoopGroup(settings.threadPoolBoss, threadFactoryBoss);
+        } else {
+            bossGroup = new NioEventLoopGroup(settings.threadPoolBoss, threadFactoryBoss);
+        }
 
         final ThreadFactory threadFactoryWorker = ThreadFactoryUtil.create("worker-%d");
-        workerGroup = new NioEventLoopGroup(settings.threadPoolWorker, threadFactoryWorker);
+        if(isEpollEnabled) {
+            workerGroup = new EpollEventLoopGroup(settings.threadPoolWorker, threadFactoryWorker);
+        }else {
+            workerGroup = new NioEventLoopGroup(settings.threadPoolWorker, threadFactoryWorker);
+        }
 
         serverGremlinExecutor = new ServerGremlinExecutor<>(settings, null, workerGroup, EventLoopGroup.class);
         gremlinExecutorService = serverGremlinExecutor.getGremlinExecutorService();
+
+        // initialize the OpLoader with configurations being passed to each OpProcessor implementation loaded
+        OpLoader.init(settings);
     }
 
     /**
@@ -94,15 +119,27 @@ public class GremlinServer {
      * pre-constructed objects used by the server as well as the {@link Settings} object itself.  This constructor
      * is useful when Gremlin Server is being used in an embedded style and there is a need to share thread pools
      * with the hosting application.
+     *
+     * @deprecated As of release 3.1.1-incubating, not replaced.
+     * @see <a href="https://issues.apache.org/jira/browse/TINKERPOP-912">TINKERPOP-912</a>
      */
+    @Deprecated
     public GremlinServer(final ServerGremlinExecutor<EventLoopGroup> serverGremlinExecutor) {
         this.serverGremlinExecutor = serverGremlinExecutor;
         this.settings = serverGremlinExecutor.getSettings();
+        this.isEpollEnabled = settings.useEpollEventLoop && SystemUtils.IS_OS_LINUX;
+        if(settings.useEpollEventLoop && !SystemUtils.IS_OS_LINUX){
+            logger.warn("cannot use epoll in non-linux env, falling back to NIO");
+        }
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> this.stop().join(), SERVER_THREAD_PREFIX + "shutdown"));
 
         final ThreadFactory threadFactoryBoss = ThreadFactoryUtil.create("boss-%d");
-        bossGroup = new NioEventLoopGroup(settings.threadPoolBoss, threadFactoryBoss);
+        if(isEpollEnabled) {
+            bossGroup = new EpollEventLoopGroup(settings.threadPoolBoss, threadFactoryBoss);
+        } else{
+            bossGroup = new NioEventLoopGroup(settings.threadPoolBoss, threadFactoryBoss);
+        }
         workerGroup = serverGremlinExecutor.getScheduledExecutorService();
         gremlinExecutorService = serverGremlinExecutor.getGremlinExecutorService();
     }
@@ -111,7 +148,7 @@ public class GremlinServer {
      * Start Gremlin Server with {@link Settings} provided to the constructor.
      */
     public synchronized CompletableFuture<ServerGremlinExecutor<EventLoopGroup>> start() throws Exception {
-        if(serverStarted != null) {
+        if (serverStarted != null) {
             // server already started - don't get it rolling again
             return serverStarted;
         }
@@ -123,8 +160,8 @@ public class GremlinServer {
 
             // when high value is reached then the channel becomes non-writable and stays like that until the
             // low value is so that there is time to recover
-            b.childOption(ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, settings.writeBufferLowWaterMark);
             b.childOption(ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK, settings.writeBufferHighWaterMark);
+            b.childOption(ChannelOption.WRITE_BUFFER_LOW_WATER_MARK, settings.writeBufferLowWaterMark);
             b.childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
 
             // fire off any lifecycle scripts that were provided by the user. hooks get initialized during
@@ -142,8 +179,12 @@ public class GremlinServer {
             final Channelizer channelizer = createChannelizer(settings);
             channelizer.init(serverGremlinExecutor);
             b.group(bossGroup, workerGroup)
-                    .channel(NioServerSocketChannel.class)
                     .childHandler(channelizer);
+            if(isEpollEnabled){
+                b.channel(EpollServerSocketChannel.class);
+            } else{
+                b.channel(NioServerSocketChannel.class);
+            }
 
             // bind to host/port and wait for channel to be ready
             b.bind(settings.host, settings.port).addListener(new ChannelFutureListener() {
@@ -199,6 +240,16 @@ public class GremlinServer {
 
         serverStopped = new CompletableFuture<>();
         final CountDownLatch servicesLeftToShutdown = new CountDownLatch(3);
+
+        // release resources in the OpProcessors (e.g. kill sessions)
+        OpLoader.getProcessors().entrySet().forEach(kv -> {
+            logger.info("Shutting down OpProcessor[{}]", kv.getKey());
+            try {
+                kv.getValue().close();
+            } catch (Exception ex) {
+                logger.warn("Shutdown will continue but, there was an error encountered while closing " + kv.getKey(), ex);
+            }
+        });
 
         // it's possible that a channel might not be initialized in the first place if bind() fails because
         // of port conflict.  in that case, there's no need to wait for the channel to close.
@@ -268,6 +319,10 @@ public class GremlinServer {
         return serverStopped;
     }
 
+    public ServerGremlinExecutor<EventLoopGroup> getServerGremlinExecutor() {
+        return serverGremlinExecutor;
+    }
+
     public static void main(final String[] args) throws Exception {
         // add to vm options: -Dlog4j.configuration=file:conf/log4j.properties
         printHeader();
@@ -286,7 +341,6 @@ public class GremlinServer {
         }
 
         logger.info("Configuring Gremlin Server from {}", file);
-        settings.optionalMetrics().ifPresent(GremlinServer::configureMetrics);
         final GremlinServer server = new GremlinServer(settings);
         server.start().exceptionally(t -> {
             logger.error("Gremlin Server was unable to start and will now begin shutdown: {}", t.getMessage());
@@ -340,5 +394,10 @@ public class GremlinServer {
 
     private static void printHeader() {
         logger.info(getHeader());
+    }
+
+    private static void provideDefaultForGremlinPoolSize(final Settings settings) {
+        if (settings.gremlinPool == 0)
+            settings.gremlinPool = Runtime.getRuntime().availableProcessors();
     }
 }

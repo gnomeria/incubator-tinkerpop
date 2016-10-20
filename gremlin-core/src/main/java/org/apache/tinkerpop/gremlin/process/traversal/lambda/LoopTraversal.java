@@ -23,7 +23,7 @@ import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  */
-public final class LoopTraversal<S, E> extends AbstractLambdaTraversal<S, E> {
+public final class LoopTraversal<S> extends AbstractLambdaTraversal<S, S> {
 
     private final long maxLoops;
     private boolean allow = false;
@@ -32,13 +32,17 @@ public final class LoopTraversal<S, E> extends AbstractLambdaTraversal<S, E> {
         this.maxLoops = maxLoops;
     }
 
+    public long getMaxLoops() {
+        return maxLoops;
+    }
+
     @Override
     public boolean hasNext() {
         return this.allow;
     }
 
     @Override
-    public void addStart(final Traverser<S> start) {
+    public void addStart(final Traverser.Admin<S> start) {
         this.allow = start.loops() >= this.maxLoops;
     }
 

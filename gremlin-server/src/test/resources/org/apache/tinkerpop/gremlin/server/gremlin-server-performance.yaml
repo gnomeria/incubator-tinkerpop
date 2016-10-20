@@ -17,10 +17,7 @@
 
 host: localhost
 port: 8182
-threadPoolWorker: 1
-gremlinPool: 8
 scriptEvaluationTimeout: 30000
-serializedResponseTimeout: 30000
 graphs: {
   graph: conf/tinkergraph-empty.properties}
 plugins:
@@ -29,10 +26,7 @@ scriptEngines: {
   gremlin-groovy: {
     imports: [java.lang.Math],
     staticImports: [java.lang.Math.PI],
-    scripts: [scripts/load-sample.groovy]},
-  nashorn: {
-      imports: [java.lang.Math],
-      staticImports: [java.lang.Math.PI]}}
+    scripts: [scripts/load-sample.groovy]}}
 serializers:
   - { className: org.apache.tinkerpop.gremlin.driver.ser.GryoMessageSerializerV1d0, config: { useMapperFromGraph: graph }}
   - { className: org.apache.tinkerpop.gremlin.driver.ser.GraphSONMessageSerializerGremlinV1d0 }
@@ -46,12 +40,12 @@ metrics: {
   slf4jReporter: {enabled: true, interval: 180000},
   gangliaReporter: {enabled: false, interval: 180000, addressingMode: MULTICAST},
   graphiteReporter: {enabled: false, interval: 180000}}
-threadPoolBoss: 1
+strictTransactionManagement: false
 maxInitialLineLength: 4096
 maxHeaderSize: 8192
 maxChunkSize: 8192
 maxContentLength: 65536
 maxAccumulationBufferComponents: 1024
 resultIterationBatchSize: 64
-writeBufferHighWaterMark: 32768
+writeBufferLowWaterMark: 32768
 writeBufferHighWaterMark: 65536

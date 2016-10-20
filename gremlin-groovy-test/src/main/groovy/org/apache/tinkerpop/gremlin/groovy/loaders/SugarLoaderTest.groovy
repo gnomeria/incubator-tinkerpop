@@ -21,12 +21,19 @@ package org.apache.tinkerpop.gremlin.groovy.loaders
 import org.apache.tinkerpop.gremlin.AbstractGremlinTest
 import org.apache.tinkerpop.gremlin.LoadGraphWith
 import org.apache.tinkerpop.gremlin.groovy.util.SugarTestHelper
-import org.apache.tinkerpop.gremlin.structure.*
+import org.apache.tinkerpop.gremlin.process.traversal.Traversal
+import org.apache.tinkerpop.gremlin.structure.Edge
+import org.apache.tinkerpop.gremlin.structure.Graph
+import org.apache.tinkerpop.gremlin.structure.Property
+import org.apache.tinkerpop.gremlin.structure.Vertex
+import org.apache.tinkerpop.gremlin.structure.VertexProperty
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory
 import org.junit.Test
 
-import static org.junit.Assert.*
-import static org.apache.tinkerpop.gremlin.process.traversal.P.*
+import static org.apache.tinkerpop.gremlin.process.traversal.P.eq
+import static org.junit.Assert.assertEquals
+import static org.junit.Assert.assertTrue
+import static org.junit.Assert.fail
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
@@ -78,20 +85,26 @@ class SugarLoaderTest extends AbstractGremlinTest {
         assertEquals(6, g.V.count.next())
         assertEquals(6, g.V.out.count.next())
         assertEquals(6, g.V.out.name.count.next())
-        assertEquals(2, g.V(1).out.out.name.count.next());
-        g.V(1).next().name = 'okram'
-        assertEquals('okram', g.V(1).next().name);
-        g.V(1).next()['name'] = 'marko a. rodriguez'
-        assertEquals(["okram", "marko a. rodriguez"] as Set, g.V(1).values('name').toSet());
+        assertEquals(2, g.V(convertToVertexId("marko")).out.out.name.count.next());
+        final Object markoId = convertToVertexId(graph, "marko");
+        g.V(markoId).next().name = 'okram'
+        assertEquals('okram', g.V(markoId).next().name);
         assertEquals(29, g.V.age.is(eq(29)).next())
+        if (graph.features().vertex().supportsMultiProperties()) {
+            g.V(markoId).next()['name'] = 'marko a. rodriguez'
+            assertEquals(["okram", "marko a. rodriguez"] as Set, g.V(markoId).values('name').toSet());
+        }
     }
 
     @Test
     @LoadGraphWith(LoadGraphWith.GraphData.MODERN)
     public void shouldUseTraverserCategoryCorrectly() {
         SugarLoader.load()
-        g.V.as('a').out.as('x').name.as('b').back('x').has('age').map { [it.a, it.b, it.age] }.forEach {
-            // println it;
+        final Traversal t = g.V.as('a').out.as('x').name.as('b').select('x').has('age').map {
+            [it.path().a, it.path().b, it.age]
+        };
+        assertTrue(t.hasNext())
+        t.forEachRemaining {
             assertTrue(it[0] instanceof Vertex)
             assertTrue(it[1] instanceof String)
             assertTrue(it[2] instanceof Integer)

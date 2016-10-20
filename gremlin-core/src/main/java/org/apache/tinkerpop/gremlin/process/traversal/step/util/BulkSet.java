@@ -22,6 +22,7 @@ import java.io.Serializable;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -83,6 +84,10 @@ public final class BulkSet<S> extends AbstractSet<S> implements Set<S>, Serializ
         this.map.forEach(consumer);
     }
 
+    public Map<S, Long> asBulk() {
+        return Collections.unmodifiableMap(map);
+    }
+
     public boolean add(final S s, final long bulk) {
         final Long current = this.map.get(s);
         if (current != null) {
@@ -137,7 +142,7 @@ public final class BulkSet<S> extends AbstractSet<S> implements Set<S>, Serializ
 
     @Override
     public boolean equals(final Object object) {
-        return this.map.equals(object);
+        return object instanceof BulkSet && this.map.equals(((BulkSet) object).map);
     }
 
     @Override

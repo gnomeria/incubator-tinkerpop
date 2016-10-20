@@ -18,10 +18,13 @@
  */
 package org.apache.tinkerpop.gremlin.hadoop.structure.io;
 
+import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.configuration.Configuration;
 import org.apache.tinkerpop.gremlin.hadoop.structure.HadoopGraph;
 import org.apache.tinkerpop.gremlin.hadoop.structure.util.ConfUtil;
 import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoPool;
+
+import java.util.Collections;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
@@ -31,26 +34,29 @@ public final class HadoopPools {
     private HadoopPools() {
     }
 
-    private static GryoPool GRYO_POOL = new GryoPool(256);
+    private static GryoPool GRYO_POOL = GryoPool.build().create();
     private static boolean INITIALIZED = false;
 
     public synchronized static void initialize(final Configuration configuration) {
         if (!INITIALIZED) {
             INITIALIZED = true;
-            GRYO_POOL = new GryoPool(configuration);
+            GRYO_POOL = GryoPool.build().
+                    poolSize(configuration.getInt(GryoPool.CONFIG_IO_GRYO_POOL_SIZE, 256)).
+                    ioRegistries(configuration.getList(GryoPool.CONFIG_IO_REGISTRY, Collections.emptyList())).
+                    initializeMapper(m -> m.registrationRequired(false)).
+                    create();
         }
     }
 
     public synchronized static void initialize(final org.apache.hadoop.conf.Configuration configuration) {
-        if (!INITIALIZED) {
-            INITIALIZED = true;
-            GRYO_POOL = new GryoPool(ConfUtil.makeApacheConfiguration(configuration));
-        }
+        HadoopPools.initialize(ConfUtil.makeApacheConfiguration(configuration));
     }
 
     public static GryoPool getGryoPool() {
-        if (!INITIALIZED)
-            HadoopGraph.LOGGER.warn("The " + HadoopPools.class.getSimpleName() + " has not be initialized, using the default pool");     // TODO: this is necessary because we can't get the pool intialized in the Merger code of the Hadoop process.
+        if (!INITIALIZED) {
+            HadoopGraph.LOGGER.warn("The " + HadoopPools.class.getSimpleName() + " has not been initialized, using the default pool");     // TODO: this is necessary because we can't get the pool intialized in the Merger code of the Hadoop process.
+            initialize(new BaseConfiguration());
+        }
         return GRYO_POOL;
     }
 }

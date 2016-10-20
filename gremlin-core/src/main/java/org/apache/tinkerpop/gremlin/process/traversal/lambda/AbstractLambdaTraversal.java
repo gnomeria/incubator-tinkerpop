@@ -18,17 +18,17 @@
  */
 package org.apache.tinkerpop.gremlin.process.traversal.lambda;
 
+import org.apache.tinkerpop.gremlin.process.traversal.Bytecode;
 import org.apache.tinkerpop.gremlin.process.traversal.Step;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalSideEffects;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategies;
 import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 import org.apache.tinkerpop.gremlin.process.traversal.TraverserGenerator;
-import org.apache.tinkerpop.gremlin.process.traversal.engine.StandardTraversalEngine;
 import org.apache.tinkerpop.gremlin.process.traversal.step.TraversalParent;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.EmptyStep;
-import org.apache.tinkerpop.gremlin.process.traversal.traverser.O_TraverserGenerator;
+import org.apache.tinkerpop.gremlin.process.traversal.traverser.B_O_TraverserGenerator;
+import org.apache.tinkerpop.gremlin.process.traversal.traverser.TraverserRequirement;
 import org.apache.tinkerpop.gremlin.process.traversal.util.EmptyTraversalSideEffects;
 import org.apache.tinkerpop.gremlin.process.traversal.util.EmptyTraversalStrategies;
 import org.apache.tinkerpop.gremlin.structure.Graph;
@@ -36,84 +36,101 @@ import org.apache.tinkerpop.gremlin.structure.Graph;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  */
 public abstract class AbstractLambdaTraversal<S, E> implements Traversal.Admin<S, E> {
 
-    private TraversalStrategies traversalStrategies = EmptyTraversalStrategies.instance();
-    private TraversalParent traversalParent = (TraversalParent) EmptyStep.instance();
-    private transient Graph graph = null;
+    private static final Set<TraverserRequirement> REQUIREMENTS = Collections.singleton(TraverserRequirement.OBJECT);
 
-    public List<Step> getSteps() {
-        return Collections.emptyList();
+    protected Traversal.Admin<S, E> bypassTraversal = null;
+
+    public void setBypassTraversal(final Traversal.Admin<S, E> bypassTraversal) {
+        this.bypassTraversal = bypassTraversal;
     }
 
     @Override
-    public void reset() {
+    public List<Step> getSteps() {
+        return null == this.bypassTraversal ? Collections.emptyList() : this.bypassTraversal.getSteps();
+    }
 
+    @Override
+    public Bytecode getBytecode() {
+        return null == this.bypassTraversal ? new Bytecode() : this.bypassTraversal.getBytecode();
+    }
+
+
+    @Override
+    public void reset() {
+        if (null != this.bypassTraversal)
+            this.bypassTraversal.reset();
     }
 
     @Override
     public <S2, E2> Traversal.Admin<S2, E2> addStep(final int index, final Step<?, ?> step) throws IllegalStateException {
-        return (Traversal.Admin<S2, E2>) this;
+        return null == this.bypassTraversal ? (Traversal.Admin<S2, E2>) this : this.bypassTraversal.addStep(index, step);
     }
 
     @Override
     public <S2, E2> Traversal.Admin<S2, E2> removeStep(final int index) throws IllegalStateException {
-        return (Traversal.Admin<S2, E2>) this;
+        return null == this.bypassTraversal ? (Traversal.Admin<S2, E2>) this : this.bypassTraversal.removeStep(index);
     }
 
     @Override
     public void applyStrategies() throws IllegalStateException {
-        this.traversalStrategies.applyStrategies(this);
-    }
-
-    @Override
-    public TraversalEngine getEngine() {
-        return StandardTraversalEngine.instance();
+        if (null != this.bypassTraversal)
+            this.bypassTraversal.applyStrategies();
     }
 
     @Override
     public TraverserGenerator getTraverserGenerator() {
-        return O_TraverserGenerator.instance();
+        return null == this.bypassTraversal ? B_O_TraverserGenerator.instance() : this.bypassTraversal.getTraverserGenerator();
     }
 
     @Override
     public void setSideEffects(final TraversalSideEffects sideEffects) {
-
+        if (null != this.bypassTraversal)
+            this.bypassTraversal.setSideEffects(sideEffects);
     }
 
     @Override
     public TraversalSideEffects getSideEffects() {
-        return EmptyTraversalSideEffects.instance();
+        return null == this.bypassTraversal ? EmptyTraversalSideEffects.instance() : this.bypassTraversal.getSideEffects();
     }
 
     @Override
     public void setStrategies(final TraversalStrategies strategies) {
-        this.traversalStrategies = strategies;
+        if (null != this.bypassTraversal)
+            this.bypassTraversal.setStrategies(strategies);
     }
 
     @Override
     public TraversalStrategies getStrategies() {
-        return this.traversalStrategies;
+        return null == this.bypassTraversal ? EmptyTraversalStrategies.instance() : this.bypassTraversal.getStrategies();
     }
 
     @Override
     public void setParent(final TraversalParent step) {
-        this.traversalParent = step;
+        if (null != this.bypassTraversal) {
+            this.bypassTraversal.setParent(step);
+            step.integrateChild(this.bypassTraversal);
+        }
     }
 
     @Override
     public TraversalParent getParent() {
-        return this.traversalParent;
+        return null == this.bypassTraversal ? EmptyStep.instance() : this.bypassTraversal.getParent();
     }
 
     @Override
     public Traversal.Admin<S, E> clone() {
         try {
-            return (AbstractLambdaTraversal<S, E>) super.clone();
+            final AbstractLambdaTraversal<S, E> clone = (AbstractLambdaTraversal<S, E>) super.clone();
+            if (null != this.bypassTraversal)
+                clone.bypassTraversal = this.bypassTraversal.clone();
+            return clone;
         } catch (final CloneNotSupportedException e) {
             throw new IllegalStateException(e.getMessage(), e);
         }
@@ -121,36 +138,59 @@ public abstract class AbstractLambdaTraversal<S, E> implements Traversal.Admin<S
 
     @Override
     public E next() {
+        if (null != this.bypassTraversal)
+            return this.bypassTraversal.next();
+        throw new UnsupportedOperationException("The " + this.getClass().getSimpleName() + " can only be used as a predicate traversal");
+    }
+
+    @Override
+    public Traverser.Admin<E> nextTraverser() {
+        if (null != this.bypassTraversal)
+            return this.bypassTraversal.nextTraverser();
         throw new UnsupportedOperationException("The " + this.getClass().getSimpleName() + " can only be used as a predicate traversal");
     }
 
     @Override
     public boolean hasNext() {
-        return true;
+        return null == this.bypassTraversal || this.bypassTraversal.hasNext();
     }
 
     @Override
-    public void addStart(final Traverser<S> start) {
+    public void addStart(final Traverser.Admin<S> start) {
+        if (null != this.bypassTraversal)
+            this.bypassTraversal.addStart(start);
     }
 
     @Override
     public boolean isLocked() {
-        return true;
-    }
-
-    @Override
-    public void setEngine(final TraversalEngine engine) {
-
+        return null == this.bypassTraversal || this.bypassTraversal.isLocked();
     }
 
     @Override
     public Optional<Graph> getGraph() {
-        return Optional.ofNullable(this.graph);
+        return null == this.bypassTraversal ? Optional.empty() : this.bypassTraversal.getGraph();
     }
 
     @Override
     public void setGraph(final Graph graph) {
-        this.graph = graph;
+        if (null != this.bypassTraversal)
+            this.bypassTraversal.setGraph(graph);
+
+    }
+
+    @Override
+    public Set<TraverserRequirement> getTraverserRequirements() {
+        return null == this.bypassTraversal ? REQUIREMENTS : this.bypassTraversal.getTraverserRequirements();
+    }
+
+    @Override
+    public int hashCode() {
+        return null == this.bypassTraversal ? this.getClass().hashCode() : this.bypassTraversal.hashCode();
+    }
+
+    @Override
+    public boolean equals(final Object object) {
+        return this.getClass().equals(object.getClass()) && this.hashCode() == object.hashCode();
     }
 
 }

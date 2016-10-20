@@ -18,6 +18,9 @@
  */
 package org.apache.tinkerpop.gremlin.driver.ser;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.UnpooledByteBufAllocator;
 import org.apache.tinkerpop.gremlin.driver.MessageSerializer;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseStatusCode;
@@ -30,26 +33,29 @@ import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONTokens;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerFactory;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
+import org.apache.tinkerpop.shaded.jackson.databind.util.StdDateFormat;
 import org.junit.Test;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.fail;
 
 /**
- * Serializer tests that cover non-lossy serialization/deserialization methods.
+ * Serializer tests that cover lossy serialization/deserialization methods.
  *
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public class GraphSONMessageSerializerGremlinV1d0Test {
+
     private UUID requestId = UUID.fromString("6457272A-4018-4538-B9AE-08DD5DDC0AA1");
     private ResponseMessage.Builder responseMessageBuilder = ResponseMessage.build(requestId);
     private static ByteBufAllocator allocator = UnpooledByteBufAllocator.DEFAULT;
@@ -57,7 +63,7 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
     public MessageSerializer serializer = new GraphSONMessageSerializerGremlinV1d0();
 
     @Test
-    public void serializeIterable() throws Exception {
+    public void shouldSerializeIterable() throws Exception {
         final ArrayList<Integer> list = new ArrayList<>();
         list.add(1);
         list.add(100);
@@ -72,7 +78,7 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
     }
 
     @Test
-    public void serializeIterableWithNull() throws Exception {
+    public void shouldSerializeIterableWithNull() throws Exception {
         final ArrayList<Integer> list = new ArrayList<>();
         list.add(1);
         list.add(null);
@@ -89,7 +95,7 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
     }
 
     @Test
-    public void serializeMap() throws Exception {
+    public void shouldSerializeMap() throws Exception {
         final Map<String, Object> map = new HashMap<>();
         final Map<String, String> innerMap = new HashMap<>();
         innerMap.put("a", "b");
@@ -112,7 +118,35 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
     }
 
     @Test
-    public void serializeEdge() throws Exception {
+    public void shouldSerializeMapEntries() throws Exception {
+        final Graph graph = TinkerGraph.open();
+        final Vertex v1 = graph.addVertex();
+        final Date d = new Date();
+
+        final Map<Object, Object> map = new HashMap<>();
+        map.put("x", 1);
+        map.put(v1, 100);
+        map.put(d, "test");
+
+        final ResponseMessage response = convert(IteratorUtils.asList(map.entrySet()));
+        assertCommon(response);
+
+        final List<Map<String, Object>> deserializedEntries = (List<Map<String, Object>>) response.getResult().getData();
+        assertEquals(3, deserializedEntries.size());
+        deserializedEntries.forEach(e -> {
+            if (e.containsKey("x"))
+                assertEquals(1, e.get("x"));
+            else if (e.containsKey(v1.id().toString()))
+                assertEquals(100, e.get(v1.id().toString()));
+            else if (e.containsKey(StdDateFormat.instance.format(d)))
+                assertEquals("test", e.get(StdDateFormat.instance.format(d)));
+            else
+                fail("Map entries contains a key that is not part of what was serialized");
+        });
+    }
+
+    @Test
+    public void shouldSerializeEdge() throws Exception {
         final Graph graph = TinkerGraph.open();
         final Vertex v1 = graph.addVertex();
         final Vertex v2 = graph.addVertex();
@@ -143,7 +177,7 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
     }
 
     @Test
-    public void serializeEdgeProperty() throws Exception {
+    public void shouldSerializeEdgeProperty() throws Exception {
         final Graph graph = TinkerGraph.open();
         final Vertex v1 = graph.addVertex();
         final Vertex v2 = graph.addVertex();
@@ -160,7 +194,7 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
     }
 
     @Test
-    public void serializeVertexWithEmbeddedMap() throws Exception {
+    public void shouldSerializeVertexWithEmbeddedMap() throws Exception {
         final Graph graph = TinkerGraph.open();
         final Vertex v = graph.addVertex();
         final Map<String, Object> map = new HashMap<>();
@@ -204,7 +238,7 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
     }
 
     @Test
-    public void serializeToJsonMapWithElementForKey() throws Exception {
+    public void shouldSerializeToJsonMapWithElementForKey() throws Exception {
         final TinkerGraph graph = TinkerFactory.createClassic();
         final GraphTraversalSource g = graph.traversal();
         final Map<Vertex, Integer> map = new HashMap<>();
@@ -221,9 +255,42 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
         assertEquals(new Integer(1000), deserializedMap.get("1"));
     }
 
+    @Test
+    public void shouldSerializeToTreeJson() throws Exception {
+        final TinkerGraph graph = TinkerFactory.createClassic();
+        final GraphTraversalSource g = graph.traversal();
+        final Map t = g.V(1).out().properties("name").tree().next();
+
+        final ResponseMessage response = convert(t);
+        assertCommon(response);
+
+        final Map<String, Map<String, Map>> deserializedMap = (Map<String, Map<String, Map>>) response.getResult().getData();
+
+        assertEquals(1, deserializedMap.size());
+
+        //check the first object and it's properties
+        final Map<String,Object> vertex = deserializedMap.get("1").get("key");
+        final Map<String,List<Map>> vertexProperties = (Map<String, List<Map>>)vertex.get("properties");
+        assertEquals(1, (int)vertex.get("id"));
+        assertEquals("marko", vertexProperties.get("name").get(0).get("value"));
+
+        //check objects tree structure
+        //check Vertex property
+        final Map<String, Map<String, Map>> subTreeMap =  deserializedMap.get("1").get("value");
+        final Map<String, Map<String, Map>> subTreeMap2 = subTreeMap.get("2").get("value");
+        final Map<String, String> vertexPropertiesDeep = subTreeMap2.get("3").get("key");
+        assertEquals("vadas", vertexPropertiesDeep.get("value"));
+        assertEquals("name", vertexPropertiesDeep.get("label"));
+
+        // check subitem
+        final Map<String,Object> vertex2 = subTreeMap.get("3").get("key");
+        final Map<String,List<Map>> vertexProperties2 = (Map<String, List<Map>>)vertex2.get("properties");
+
+        assertEquals("lop", vertexProperties2.get("name").get(0).get("value"));
+    }
 
     @Test
-    public void serializeFullResponseMessage() throws Exception {
+    public void shouldSerializeFullResponseMessage() throws Exception {
         final UUID id = UUID.randomUUID();
 
         final Map<String, Object> metaData = new HashMap<>();
@@ -254,7 +321,7 @@ public class GraphSONMessageSerializerGremlinV1d0Test {
         assertEquals(ResponseStatusCode.SUCCESS.getValue(), deserialized.getStatus().getCode().getValue());
         assertEquals("worked", deserialized.getStatus().getMessage());
     }
-
+    
     private void assertCommon(final ResponseMessage response) {
         assertEquals(requestId, response.getRequestId());
         assertEquals(ResponseStatusCode.SUCCESS, response.getStatus().getCode());

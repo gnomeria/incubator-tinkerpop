@@ -29,6 +29,9 @@ import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
+import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONIo;
+import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONVersion;
+import org.apache.tinkerpop.gremlin.structure.io.graphson.TypeInfo;
 import org.apache.tinkerpop.gremlin.structure.io.gryo.VertexByteArrayInputStream;
 import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedFactory;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
@@ -50,7 +53,7 @@ import java.util.function.Predicate;
 
 import static org.apache.tinkerpop.gremlin.structure.Graph.Features.DataTypeFeatures.FEATURE_STRING_VALUES;
 import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.startsWith;
+import static org.hamcrest.core.StringStartsWith.startsWith;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -68,12 +71,18 @@ public class IoVertexTest extends AbstractGremlinTest {
     @Parameterized.Parameters(name = "{0}")
     public static Iterable<Object[]> data() {
         return Arrays.asList(new Object[][]{
-                {"graphson", false, false,
+                {"graphson-v1", false, false,
                         (Function<Graph, GraphReader>) g -> g.io(IoCore.graphson()).reader().create(),
                         (Function<Graph, GraphWriter>) g -> g.io(IoCore.graphson()).writer().create()},
-                {"graphson-embedded", true, false,
+                {"graphson-v1-embedded", true, false,
                         (Function<Graph, GraphReader>) g -> g.io(IoCore.graphson()).reader().mapper(g.io(IoCore.graphson()).mapper().embedTypes(true).create()).create(),
                         (Function<Graph, GraphWriter>) g -> g.io(IoCore.graphson()).writer().mapper(g.io(IoCore.graphson()).mapper().embedTypes(true).create()).create()},
+                {"graphson-v2", false, false,
+                        (Function<Graph, GraphReader>) g -> g.io(IoCore.graphson()).reader().mapper(g.io(GraphSONIo.build(GraphSONVersion.V2_0)).mapper().typeInfo(TypeInfo.NO_TYPES).create()).create(),
+                        (Function<Graph, GraphWriter>) g -> g.io(IoCore.graphson()).writer().mapper(g.io(GraphSONIo.build(GraphSONVersion.V2_0)).mapper().typeInfo(TypeInfo.NO_TYPES).create()).create()},
+                {"graphson-v2-embedded", true, false,
+                        (Function<Graph, GraphReader>) g -> g.io(IoCore.graphson()).reader().mapper(g.io(GraphSONIo.build(GraphSONVersion.V2_0)).mapper().typeInfo(TypeInfo.PARTIAL_TYPES).create()).create(),
+                        (Function<Graph, GraphWriter>) g -> g.io(IoCore.graphson()).writer().mapper(g.io(GraphSONIo.build(GraphSONVersion.V2_0)).mapper().typeInfo(TypeInfo.PARTIAL_TYPES).create()).create()},
                 {"gryo", true, true,
                         (Function<Graph, GraphReader>) g -> g.io(IoCore.gryo()).reader().create(),
                         (Function<Graph, GraphWriter>) g -> g.io(IoCore.gryo()).writer().create()}

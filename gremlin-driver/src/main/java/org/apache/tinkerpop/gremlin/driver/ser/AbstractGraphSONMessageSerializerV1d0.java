@@ -18,16 +18,6 @@
  */
 package org.apache.tinkerpop.gremlin.driver.ser;
 
-import com.fasterxml.jackson.core.JsonGenerationException;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializerProvider;
-import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
-import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.fasterxml.jackson.databind.ser.std.StdSerializer;
-import org.apache.tinkerpop.gremlin.driver.MessageSerializer;
 import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseStatusCode;
@@ -40,6 +30,17 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.util.ReferenceCountUtil;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONTokens;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONUtil;
+import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONVersion;
+import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONXModuleV2d0;
+import org.apache.tinkerpop.shaded.jackson.core.JsonGenerationException;
+import org.apache.tinkerpop.shaded.jackson.core.JsonGenerator;
+import org.apache.tinkerpop.shaded.jackson.core.JsonProcessingException;
+import org.apache.tinkerpop.shaded.jackson.core.type.TypeReference;
+import org.apache.tinkerpop.shaded.jackson.databind.ObjectMapper;
+import org.apache.tinkerpop.shaded.jackson.databind.SerializerProvider;
+import org.apache.tinkerpop.shaded.jackson.databind.jsontype.TypeSerializer;
+import org.apache.tinkerpop.shaded.jackson.databind.module.SimpleModule;
+import org.apache.tinkerpop.shaded.jackson.databind.ser.std.StdSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,18 +52,18 @@ import java.util.UUID;
 /**
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
-public abstract class AbstractGraphSONMessageSerializerV1d0 implements MessageSerializer {
+public abstract class AbstractGraphSONMessageSerializerV1d0 extends AbstractMessageSerializer {
     private static final Logger logger = LoggerFactory.getLogger(AbstractGraphSONMessageSerializerV1d0.class);
 
     protected ObjectMapper mapper;
 
-    protected static final String TOKEN_USE_MAPPER_FROM_GRAPH = "useMapperFromGraph";
+    public static final String TOKEN_USE_MAPPER_FROM_GRAPH = "useMapperFromGraph";
 
     protected final TypeReference<Map<String, Object>> mapTypeReference = new TypeReference<Map<String, Object>>() {
     };
 
     public AbstractGraphSONMessageSerializerV1d0() {
-        final GraphSONMapper.Builder builder = configureBuilder(GraphSONMapper.build());
+        final GraphSONMapper.Builder builder = configureBuilder(initBuilder(null));
         mapper = builder.create().createMapper();
     }
 
@@ -89,13 +90,15 @@ public abstract class AbstractGraphSONMessageSerializerV1d0 implements MessageSe
 
             // a graph was found so use the mapper it constructs.  this allows graphson to be auto-configured with any
             // custom classes that the implementation allows for
-            initialBuilder = g.io(GraphSONIo.build()).mapper();
+            initialBuilder = initBuilder(g.io(GraphSONIo.build()).mapper());
         } else {
             // no graph was supplied so just use the default - this will likely be the case when using a graph
             // with no custom classes or a situation where the user needs complete control like when using two
             // distinct implementations each with their own custom classes.
-            initialBuilder = GraphSONMapper.build();
+            initialBuilder = initBuilder(null);
         }
+
+        addIoRegistries(config, initialBuilder);
 
         mapper = configureBuilder(initialBuilder).create().createMapper();
     }
@@ -168,6 +171,12 @@ public abstract class AbstractGraphSONMessageSerializerV1d0 implements MessageSe
             logger.warn("Response [{}] could not be deserialized by {}.", msg, AbstractGraphSONMessageSerializerV1d0.class.getName());
             throw new SerializationException(ex);
         }
+    }
+
+    private GraphSONMapper.Builder initBuilder(final GraphSONMapper.Builder builder) {
+        final GraphSONMapper.Builder b = null == builder ? GraphSONMapper.build() : builder;
+        return b.addCustomModule(new AbstractGraphSONMessageSerializerV1d0.GremlinServerModule())
+                .version(GraphSONVersion.V1_0);
     }
 
     public final static class GremlinServerModule extends SimpleModule {

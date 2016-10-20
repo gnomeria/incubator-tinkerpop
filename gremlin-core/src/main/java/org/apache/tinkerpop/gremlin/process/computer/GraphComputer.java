@@ -18,6 +18,10 @@
  */
 package org.apache.tinkerpop.gremlin.process.computer;
 
+import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+
 import java.util.concurrent.Future;
 
 /**
@@ -95,6 +99,53 @@ public interface GraphComputer {
     public GraphComputer mapReduce(final MapReduce mapReduce);
 
     /**
+     * Set the desired number of workers to execute the {@link VertexProgram} and {@link MapReduce} jobs.
+     * This is a recommendation to the underlying {@link GraphComputer} implementation and is allowed to deviate accordingly by the implementation.
+     *
+     * @param workers the number of workers to execute the submission
+     * @return the updated GraphComputer with newly set worker count
+     */
+    public GraphComputer workers(final int workers);
+
+    /**
+     * Add a filter that will limit which vertices are loaded from the graph source.
+     * The provided {@link Traversal} can only check the vertex, its vertex properties, and the vertex property properties.
+     * The loaded graph will only have those vertices that pass through the provided filter.
+     *
+     * @param vertexFilter the traversal to verify whether or not to load the current vertex
+     * @return the updated GraphComputer with newly set vertex filter
+     * @throws IllegalArgumentException if the provided traversal attempts to access vertex edges
+     */
+    public GraphComputer vertices(final Traversal<Vertex, Vertex> vertexFilter) throws IllegalArgumentException;
+
+    /**
+     * Add a filter that will limit which edges of the vertices are loaded from the graph source.
+     * The provided {@link Traversal} can only check the local star graph of the vertex and thus,
+     * can not access properties/labels of the adjacent vertices.
+     * The vertices of the loaded graph will only have those edges that pass through the provided filter.
+     *
+     * @param edgeFilter the traversal that determines which edges are loaded for each vertex
+     * @return the updated GraphComputer with newly set edge filter
+     * @throws IllegalArgumentException if the provided traversal attempts to access adjacent vertices
+     */
+    public GraphComputer edges(final Traversal<Vertex, Edge> edgeFilter) throws IllegalArgumentException;
+
+    /**
+     * Set an arbitrary configuration key/value for the underlying {@link org.apache.commons.configuration.Configuration} in the {@link GraphComputer}.
+     * Typically, the other fluent methods in {@link GraphComputer} should be used to configure the computation.
+     * However, for some custom configuration in the underlying engine, this method should be used.
+     * Different GraphComputer implementations will have different key/values and thus, parameters placed here are generally not universal to all GraphComputer implementations.
+     * The default implementation simply does nothing and returns the {@link GraphComputer} unchanged.
+     *
+     * @param key   the key of the configuration
+     * @param value the value of the configuration
+     * @return the updated GraphComputer with newly set key/value configuration
+     */
+    public default GraphComputer configure(final String key, final Object value) {
+        return this;
+    }
+
+    /**
      * Submit the {@link VertexProgram} and the set of {@link MapReduce} jobs for execution by the {@link GraphComputer}.
      *
      * @return a {@link Future} denoting a reference to the asynchronous computation and where to get the {@link org.apache.tinkerpop.gremlin.process.computer.util.DefaultComputerResult} when its is complete.
@@ -107,6 +158,10 @@ public interface GraphComputer {
     }
 
     public interface Features {
+
+        public default int getMaxWorkers() {
+            return Integer.MAX_VALUE;
+        }
 
         public default boolean supportsGlobalMessageScopes() {
             return true;
@@ -152,6 +207,10 @@ public interface GraphComputer {
             return true;
         }
 
+        public default boolean supportsGraphFilter() {
+            return true;
+        }
+
         /**
          * Supports {@link VertexProgram} and {@link MapReduce} parameters to be direct referenced Java objects (no serialization required).
          * This is typically true for single machine graph computer engines. For cluster oriented graph computers, this is typically false.
@@ -176,6 +235,10 @@ public interface GraphComputer {
 
         public static UnsupportedOperationException adjacentVertexEdgesAndVerticesCanNotBeReadOrUpdated() {
             return new UnsupportedOperationException("The edges and vertices of an adjacent vertex can not be read or updated");
+        }
+
+        public static UnsupportedOperationException graphFilterNotSupported() {
+            return new UnsupportedOperationException("The computer does not support graph filter");
         }
 
         public static IllegalArgumentException providedKeyIsNotAnElementComputeKey(final String key) {
@@ -204,6 +267,18 @@ public interface GraphComputer {
 
         public static UnsupportedOperationException vertexPropertiesCanNotBeUpdatedInMapReduce() {
             return new UnsupportedOperationException("The computer is in MapReduce mode and a vertex's properties can not be updated");
+        }
+
+        public static IllegalArgumentException computerRequiresMoreWorkersThanSupported(final int workers, final int maxWorkers) {
+            return new IllegalArgumentException("The computer requires more workers than supported: " + workers + " [max:" + maxWorkers + "]");
+        }
+
+        public static IllegalArgumentException vertexFilterAccessesIncidentEdges(final Traversal<Vertex, Vertex> vertexFilter) {
+            return new IllegalArgumentException("The provided vertex filter traversal accesses incident edges: " + vertexFilter);
+        }
+
+        public static IllegalArgumentException edgeFilterAccessesAdjacentVertices(final Traversal<Vertex, Edge> edgeFilter) {
+            return new IllegalArgumentException("The provided edge filter traversal accesses data on adjacent vertices: " + edgeFilter);
         }
     }
 

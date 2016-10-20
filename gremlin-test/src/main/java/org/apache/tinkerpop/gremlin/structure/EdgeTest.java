@@ -21,21 +21,15 @@ package org.apache.tinkerpop.gremlin.structure;
 import org.apache.tinkerpop.gremlin.AbstractGremlinTest;
 import org.apache.tinkerpop.gremlin.ExceptionCoverage;
 import org.apache.tinkerpop.gremlin.FeatureRequirement;
-import org.apache.tinkerpop.gremlin.LoadGraphWith;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
-import org.apache.tinkerpop.gremlin.util.function.FunctionUtils;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.function.Consumer;
 
 import static org.apache.tinkerpop.gremlin.structure.Graph.Features.PropertyFeatures.*;
 import static org.junit.Assert.*;
@@ -112,7 +106,7 @@ public class EdgeTest {
         public void shouldHaveExceptionConsistencyWhenUsingNullVertex() {
             final Vertex v = graph.addVertex();
             try {
-                v.addEdge("to-nothing", null);
+                v.addEdge("tonothing", null);
                 fail("Call to Vertex.addEdge() should throw an exception when vertex is null");
             } catch (Exception ex) {
                 validateException(Graph.Exceptions.argumentCanNotBeNull("vertex"), ex);
@@ -148,6 +142,7 @@ public class EdgeTest {
 
         @Test
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
         @FeatureRequirement(featureClass = Graph.Features.EdgePropertyFeatures.class, feature = FEATURE_STRING_VALUES)
         public void shouldAutotypeStringProperties() {
@@ -160,9 +155,10 @@ public class EdgeTest {
 
         @Test
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
         @FeatureRequirement(featureClass = Graph.Features.EdgePropertyFeatures.class, feature = FEATURE_INTEGER_VALUES)
-        public void shouldAutotypIntegerProperties() {
+        public void shouldAutotypeIntegerProperties() {
             final Vertex v = graph.addVertex();
             final Edge e = v.addEdge("knows", v, "integer", 33);
             final Integer age = e.value("integer");
@@ -171,6 +167,7 @@ public class EdgeTest {
 
         @Test
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
         @FeatureRequirement(featureClass = Graph.Features.EdgePropertyFeatures.class, feature = FEATURE_BOOLEAN_VALUES)
         public void shouldAutotypeBooleanProperties() {
@@ -182,6 +179,7 @@ public class EdgeTest {
 
         @Test
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
         @FeatureRequirement(featureClass = Graph.Features.EdgePropertyFeatures.class, feature = FEATURE_DOUBLE_VALUES)
         public void shouldAutotypeDoubleProperties() {
@@ -193,6 +191,7 @@ public class EdgeTest {
 
         @Test
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
         @FeatureRequirement(featureClass = Graph.Features.EdgePropertyFeatures.class, feature = FEATURE_LONG_VALUES)
         public void shouldAutotypeLongProperties() {
@@ -204,6 +203,7 @@ public class EdgeTest {
 
         @Test
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
         @FeatureRequirement(featureClass = Graph.Features.EdgePropertyFeatures.class, feature = FEATURE_FLOAT_VALUES)
         public void shouldAutotypeFloatProperties() {
@@ -215,6 +215,7 @@ public class EdgeTest {
 
         @Test
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_REMOVE_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
         @FeatureRequirement(featureClass = Graph.Features.EdgePropertyFeatures.class, feature = FEATURE_STRING_VALUES)
@@ -260,20 +261,21 @@ public class EdgeTest {
                 v.addEdge("friend", v);
             }
 
-            tryCommit(graph, assertVertexEdgeCounts(25, 25));
+            tryCommit(graph, getAssertVertexEdgeCounts(25, 25));
 
             for (Edge e : g.E().toList()) {
                 e.remove();
                 tryCommit(graph);
             }
 
-            tryCommit(graph, assertVertexEdgeCounts(25, 0));
+            tryCommit(graph, getAssertVertexEdgeCounts(25, 0));
         }
 
         @Test
         @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
-        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_REMOVE_VERTICES)
+        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_EDGES)
+        @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_ADD_PROPERTY)
         @FeatureRequirement(featureClass = Graph.Features.EdgeFeatures.class, feature = Graph.Features.EdgeFeatures.FEATURE_REMOVE_EDGES)
         public void shouldNotHaveAConcurrentModificationExceptionWhenIteratingAndRemovingAddingEdges() {
             final Vertex v1 = graph.addVertex("name", "marko");
@@ -320,44 +322,6 @@ public class EdgeTest {
             assertTrue(iterator.hasNext());
             assertEquals(b, iterator.next());
             assertFalse(iterator.hasNext());
-        }
-    }
-
-    @RunWith(Parameterized.class)
-    @ExceptionCoverage(exceptionClass = Element.Exceptions.class, methods = {
-            "elementAlreadyRemoved"
-    })
-    public static class ExceptionConsistencyWhenEdgeRemovedTest extends AbstractGremlinTest {
-
-        @Parameterized.Parameters(name = "{0}")
-        public static Iterable<Object[]> data() {
-            return Arrays.asList(new Object[][]{
-                    {"property(k)", FunctionUtils.wrapConsumer((Edge e) -> e.property("x"))},
-                    {"remove()", FunctionUtils.wrapConsumer(Edge::remove)}});
-        }
-
-        @Parameterized.Parameter(value = 0)
-        public String name;
-
-        @Parameterized.Parameter(value = 1)
-        public Consumer<Edge> functionToTest;
-
-        @Test
-        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_ADD_VERTICES)
-        @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_REMOVE_VERTICES)
-        public void shouldThrowExceptionIfEdgeWasRemoved() {
-            final Vertex v1 = graph.addVertex("name", "stephen");
-            final Edge e = v1.addEdge("knows", v1, "x", "y");
-            final Object id = e.id();
-            e.remove();
-            tryCommit(graph, graph -> {
-                try {
-                    functionToTest.accept(e);
-                    fail("Should have thrown exception as the Edge was already removed");
-                } catch (Exception ex) {
-                    validateException(Element.Exceptions.elementAlreadyRemoved(Edge.class, id), ex);
-                }
-            });
         }
     }
 }

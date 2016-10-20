@@ -21,20 +21,15 @@ package org.apache.tinkerpop.gremlin.process.traversal.step.map;
 import org.apache.tinkerpop.gremlin.LoadGraphWith;
 import org.apache.tinkerpop.gremlin.process.AbstractGremlinProcessTest;
 import org.apache.tinkerpop.gremlin.process.GremlinProcessRunner;
-import org.apache.tinkerpop.gremlin.process.traversal.Scope;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
-import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
 
 import static org.apache.tinkerpop.gremlin.LoadGraphWith.GraphData.MODERN;
 import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.bothE;
-import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.mean;
 import static org.junit.Assert.*;
 
 /**
@@ -45,25 +40,22 @@ public abstract class MeanTest extends AbstractGremlinProcessTest {
 
     public abstract Traversal<Vertex, Double> get_g_V_age_mean();
 
-    public abstract Traversal<Vertex, Map<String, Number>> get_g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_valuesXweightX_foldX_byXmeanXlocalXX();
+    public abstract Traversal<Vertex, Map<String, Number>> get_g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_weight_meanX();
 
     @Test
     @LoadGraphWith(MODERN)
     public void g_V_age_mean() {
-        final List<Traversal<Vertex, Double>> traversals = Arrays.asList(get_g_V_age_mean());
-        traversals.forEach(traversal -> {
-            printTraversalForm(traversal);
-            final Double mean = traversal.next();
-            assertEquals(30.75, mean, 0.05);
-            assertFalse(traversal.hasNext());
-
-        });
+        final Traversal<Vertex, Double> traversal = get_g_V_age_mean();
+        printTraversalForm(traversal);
+        final Double mean = traversal.next();
+        assertEquals(30.75, mean, 0.05);
+        assertFalse(traversal.hasNext());
     }
 
     @Test
     @LoadGraphWith(MODERN)
-    public void g_V_hasLabelXsoftwareX_group_byXnameX_byXin_valuesXageX_foldX_byXmeanXlocalXX() {
-        final Traversal<Vertex, Map<String, Number>> traversal = get_g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_valuesXweightX_foldX_byXmeanXlocalXX();
+    public void g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_weight_meanX() {
+        final Traversal<Vertex, Map<String, Number>> traversal = get_g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_weight_meanX();
         printTraversalForm(traversal);
         assertTrue(traversal.hasNext());
         final Map<String, Number> map = traversal.next();
@@ -81,8 +73,8 @@ public abstract class MeanTest extends AbstractGremlinProcessTest {
         }
 
         @Override
-        public Traversal<Vertex, Map<String, Number>> get_g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_valuesXweightX_foldX_byXmeanXlocalXX() {
-            return g.V().hasLabel("software").<String, Number>group().by("name").by(bothE().values("weight").fold()).by(mean(Scope.local));
+        public Traversal<Vertex, Map<String, Number>> get_g_V_hasLabelXsoftwareX_group_byXnameX_byXbothE_weight_meanX() {
+            return g.V().hasLabel("software").<String, Number>group().by("name").by(bothE().values("weight").mean());
         }
     }
 }

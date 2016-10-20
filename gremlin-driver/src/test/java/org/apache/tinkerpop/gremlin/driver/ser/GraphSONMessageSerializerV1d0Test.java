@@ -18,32 +18,47 @@
  */
 package org.apache.tinkerpop.gremlin.driver.ser;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.NullNode;
 import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseStatusCode;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
+import org.apache.tinkerpop.gremlin.process.traversal.step.util.Tree;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Property;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
+import org.apache.tinkerpop.gremlin.structure.io.AbstractIoRegistry;
+import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONIo;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONTokens;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerFactory;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
+import org.apache.tinkerpop.shaded.jackson.core.JsonGenerationException;
+import org.apache.tinkerpop.shaded.jackson.core.JsonGenerator;
+import org.apache.tinkerpop.shaded.jackson.databind.JsonNode;
+import org.apache.tinkerpop.shaded.jackson.databind.ObjectMapper;
+import org.apache.tinkerpop.shaded.jackson.databind.SerializerProvider;
+import org.apache.tinkerpop.shaded.jackson.databind.module.SimpleModule;
+import org.apache.tinkerpop.shaded.jackson.databind.node.NullNode;
+import org.apache.tinkerpop.shaded.jackson.databind.ser.std.StdSerializer;
+import org.apache.tinkerpop.shaded.jackson.databind.util.StdDateFormat;
 import org.junit.Test;
 
+import java.awt.Color;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.fail;
 
 /**
  * These tests focus on message serialization and not "result" serialization as test specific to results (e.g.
@@ -59,7 +74,24 @@ public class GraphSONMessageSerializerV1d0Test {
     private static final ObjectMapper mapper = new ObjectMapper();
 
     @Test
-    public void serializeToJsonNullResultReturnsNull() throws Exception {
+    public void shouldConfigureIoRegistry() throws Exception {
+        final GraphSONMessageSerializerV1d0 serializer = new GraphSONMessageSerializerV1d0();
+        final Map<String, Object> config = new HashMap<String, Object>() {{
+            put(GryoMessageSerializerV1d0.TOKEN_IO_REGISTRIES, Arrays.asList(ColorIoRegistry.class.getName()));
+        }};
+
+        serializer.configure(config, null);
+
+        final ResponseMessage toSerialize = ResponseMessage.build(UUID.fromString("2D62161B-9544-4F39-AF44-62EC49F9A595"))
+                .result(Color.RED).create();
+        final String results = serializer.serializeResponseAsString(toSerialize);
+        final JsonNode json = mapper.readTree(results);
+        assertNotNull(json);
+        assertThat(json.get(SerTokens.TOKEN_RESULT).get(SerTokens.TOKEN_DATA).booleanValue(), is(true));
+    }
+
+    @Test
+    public void shouldSerializeToJsonNullResultReturnsNull() throws Exception {
         final ResponseMessage message = ResponseMessage.build(msg).create();
         final String results = SERIALIZER.serializeResponseAsString(message);
         final JsonNode json = mapper.readTree(results);
@@ -69,7 +101,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeToJsonIterable() throws Exception {
+    public void shouldSerializeToJsonIterable() throws Exception {
         final ArrayList<FunObject> funList = new ArrayList<>();
         funList.add(new FunObject("x"));
         funList.add(new FunObject("y"));
@@ -88,7 +120,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeToJsonIterator() throws Exception {
+    public void shouldSerializeToJsonIterator() throws Exception {
         final ArrayList<FunObject> funList = new ArrayList<>();
         funList.add(new FunObject("x"));
         funList.add(new FunObject("y"));
@@ -107,7 +139,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeToJsonIteratorNullElement() throws Exception {
+    public void shouldSerializeToJsonIteratorNullElement() throws Exception {
 
         final ArrayList<FunObject> funList = new ArrayList<>();
         funList.add(new FunObject("x"));
@@ -129,7 +161,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeToJsonMap() throws Exception {
+    public void shouldSerializeToJsonMap() throws Exception {
         final Map<String, Object> map = new HashMap<>();
         final Map<String, String> innerMap = new HashMap<>();
         innerMap.put("a", "b");
@@ -155,7 +187,36 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeEdge() throws Exception {
+    public void shouldShouldSerializeMapEntries() throws Exception {
+        final Graph graph = TinkerGraph.open();
+        final Vertex v1 = graph.addVertex();
+        final Date d = new Date();
+
+        final Map<Object, Object> map = new HashMap<>();
+        map.put("x", 1);
+        map.put(v1, 100);
+        map.put(d, "test");
+
+        final String results = SERIALIZER.serializeResponseAsString(ResponseMessage.build(msg).result(IteratorUtils.asList(map)).create());
+        final JsonNode json = mapper.readTree(results);
+
+        assertNotNull(json);
+        assertEquals(msg.getRequestId().toString(), json.get(SerTokens.TOKEN_REQUEST).asText());
+        final JsonNode jsonObject = json.get(SerTokens.TOKEN_RESULT).get(SerTokens.TOKEN_DATA);
+        jsonObject.elements().forEachRemaining(e -> {
+            if (e.has("x"))
+                assertEquals(1, e.get("x").asInt());
+            else if (e.has(v1.id().toString()))
+                assertEquals(100, e.get(v1.id().toString()).asInt());
+            else if (e.has(StdDateFormat.instance.format(d)))
+                assertEquals("test", e.get(StdDateFormat.instance.format(d)).asText());
+            else
+                fail("Map entries contains a key that is not part of what was serialized");
+        });
+    }
+
+    @Test
+    public void shouldSerializeEdge() throws Exception {
         final Graph g = TinkerGraph.open();
         final Vertex v1 = g.addVertex();
         final Vertex v2 = g.addVertex();
@@ -189,7 +250,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeEdgeProperty() throws Exception {
+    public void shouldSerializeEdgeProperty() throws Exception {
         final Graph g = TinkerGraph.open();
         final Vertex v1 = g.addVertex();
         final Vertex v2 = g.addVertex();
@@ -215,7 +276,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeToJsonIteratorWithEmbeddedMap() throws Exception {
+    public void shouldSerializeToJsonIteratorWithEmbeddedMap() throws Exception {
         final Graph g = TinkerGraph.open();
         final Vertex v = g.addVertex();
         final Map<String, Object> map = new HashMap<>();
@@ -265,7 +326,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeToJsonMapWithElementForKey() throws Exception {
+    public void shouldSerializeToJsonMapWithElementForKey() throws Exception {
         final TinkerGraph graph = TinkerFactory.createClassic();
         final GraphTraversalSource g = graph.traversal();
         final Map<Vertex, Integer> map = new HashMap<>();
@@ -286,7 +347,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void deserializeRequestNicelyWithNoArgs() throws Exception {
+    public void shouldDeserializeRequestNicelyWithNoArgs() throws Exception {
         final UUID request = UUID.fromString("011CFEE9-F640-4844-AC93-034448AC0E80");
         final RequestMessage m = SERIALIZER.deserializeRequest(String.format("{\"requestId\":\"%s\",\"op\":\"eval\"}", request));
         assertEquals(request, m.getRequestId());
@@ -296,7 +357,7 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test
-    public void deserializeRequestNicelyWithArgs() throws Exception {
+    public void shouldDeserializeRequestNicelyWithArgs() throws Exception {
         final UUID request = UUID.fromString("011CFEE9-F640-4844-AC93-034448AC0E80");
         final RequestMessage m = SERIALIZER.deserializeRequest(String.format("{\"requestId\":\"%s\",\"op\":\"eval\",\"args\":{\"x\":\"y\"}}", request));
         assertEquals(request, m.getRequestId());
@@ -306,12 +367,12 @@ public class GraphSONMessageSerializerV1d0Test {
     }
 
     @Test(expected = SerializationException.class)
-    public void deserializeRequestParseMessage() throws Exception {
+    public void shouldDeserializeRequestParseMessage() throws Exception {
         SERIALIZER.deserializeRequest("{\"requestId\":\"%s\",\"op\":\"eval\",\"args\":{\"x\":\"y\"}}");
     }
 
     @Test
-    public void serializeFullResponseMessage() throws Exception {
+    public void shouldSerializeFullResponseMessage() throws Exception {
         final UUID id = UUID.randomUUID();
 
         final Map<String, Object> metaData = new HashMap<>();
@@ -342,6 +403,47 @@ public class GraphSONMessageSerializerV1d0Test {
         assertEquals(ResponseStatusCode.SUCCESS.getValue(), deserialized.getStatus().getCode().getValue());
         assertEquals("worked", deserialized.getStatus().getMessage());
     }
+    
+    @Test
+    public void shouldSerializeToJsonTree() throws Exception {
+        final TinkerGraph graph = TinkerFactory.createClassic();
+        final GraphTraversalSource g = graph.traversal();
+        final Tree t = g.V(1).out().properties("name").tree().next();
+
+        
+        final String results = SERIALIZER.serializeResponseAsString(ResponseMessage.build(msg).result(t).create());
+
+        final JsonNode json = mapper.readTree(results);
+
+        assertNotNull(json);
+        assertEquals(msg.getRequestId().toString(), json.get(SerTokens.TOKEN_REQUEST).asText());
+        final JsonNode converted = json.get(SerTokens.TOKEN_RESULT).get(SerTokens.TOKEN_DATA);
+        assertNotNull(converted);
+        
+        //check the first object and it's properties
+        assertEquals(1, converted.get("1").get("key").get("id").asInt());
+        assertEquals("marko", converted.get("1").get("key").get("properties").get("name").get(0).get("value").asText());
+        
+        //check objects tree structure
+        //check Vertex property
+        assertEquals("vadas", converted.get("1")
+                                 .get("value")
+                                 .get("2")
+                                 .get("value")
+                                 .get("3").get("key").get("value").asText());
+        assertEquals("name", converted.get("1")
+                                 .get("value")
+                                 .get("2")
+                                 .get("value")
+                                 .get("3").get("key").get("label").asText());
+        
+        // check subitem
+        assertEquals("lop", converted.get("1")
+                                 .get("value")
+                                 .get("3")
+                                 .get("key")
+                                 .get("properties").get("name").get(0).get("value").asText());
+    }
 
     private class FunObject {
         private String val;
@@ -352,6 +454,32 @@ public class GraphSONMessageSerializerV1d0Test {
 
         public String toString() {
             return this.val;
+        }
+    }
+
+    public static class ColorIoRegistry extends AbstractIoRegistry {
+        public ColorIoRegistry() {
+            register(GraphSONIo.class, null, new ColorSimpleModule());
+        }
+    }
+
+    public static class ColorSimpleModule extends SimpleModule {
+        public ColorSimpleModule() {
+            super("color-fun");
+            addSerializer(Color.class, new ColorSerializer());
+
+        }
+    }
+
+    public static class ColorSerializer extends StdSerializer<Color> {
+        public ColorSerializer() {
+            super(Color.class);
+        }
+
+        @Override
+        public void serialize(final Color color, final JsonGenerator jsonGenerator,
+                              final SerializerProvider serializerProvider) throws IOException, JsonGenerationException {
+            jsonGenerator.writeBoolean(color.equals(Color.RED));
         }
     }
 }

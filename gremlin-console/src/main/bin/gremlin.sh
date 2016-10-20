@@ -22,25 +22,39 @@
 set -e
 set -u
 
+cd $(dirname $0)
+DIR=`pwd`
+
+SCRIPT_NAME=`basename $0`
+while [ -h "${SCRIPT_NAME}" ]; do
+  SOURCE="$(readlink "${SCRIPT_NAME}")"
+  DIR="$( cd -P "$( dirname "${SOURCE}" )" && pwd )"
+  cd ${DIR}
+done
+
+cd ..
+SYSTEM_EXT_DIR="`pwd`/ext"
+
+JAVA_OPTIONS=${JAVA_OPTIONS:-}
+
+if [ ! -z "${JAVA_OPTIONS}" ]; then
+  USER_EXT_DIR=$(grep -o '\-Dtinkerpop.ext=\(\([^"][^ ]*\)\|\("[^"]*"\)\)' <<< "${JAVA_OPTIONS}" | cut -f2 -d '=' | xargs -0 echo)
+  if [ ! -z "${USER_EXT_DIR}" -a ! -d "${USER_EXT_DIR}" ]; then
+    mkdir -p "${USER_EXT_DIR}"
+    cp -R ${SYSTEM_EXT_DIR}/* ${USER_EXT_DIR}/
+  fi
+fi
+
 case `uname` in
   CYGWIN*)
-    CP="`dirname $0`"/../config
-    CP="$CP":$( echo `dirname $0`/../lib/*.jar . | sed 's/ /;/g')
+    CP="${CP:-}";$( echo lib/*.jar . | sed 's/ /;/g')
     ;;
   *)
-    CP="`dirname $0`"/../config
-    CP="$CP":$( echo `dirname $0`/../lib/*.jar . | sed 's/ /:/g')
+    CP="${CP:-}":$( echo lib/*.jar . | sed 's/ /:/g')
 esac
 
-SOURCE="${BASH_SOURCE[0]}"
-while [ -h "$SOURCE" ]; do
-  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
-CP=$CP:$( find -L "$DIR"/../ext -mindepth 1 -maxdepth 1 -type d | \
-          sort | sed 's/$/\/plugin\/*/' | tr '\n' ':' )
+CP=$CP:$( find -L "${SYSTEM_EXT_DIR}" "${USER_EXT_DIR:-${SYSTEM_EXT_DIR}}" -mindepth 1 -maxdepth 1 -type d | \
+          sort -u | sed 's/$/\/plugin\/*/' | tr '\n' ':' )
 
 export CLASSPATH="${CLASSPATH:-}:$CP"
 
@@ -64,15 +78,8 @@ if [ -z "${SCRIPT_DEBUG:-}" ]; then
 fi
 
 # Process options
-MAIN_CLASS=org.apache.tinkerpop.gremlin.console.Console
-while getopts "elv" opt; do
+while getopts ":l" opt; do
     case "$opt" in
-    e) MAIN_CLASS=org.apache.tinkerpop.gremlin.groovy.jsr223.ScriptExecutor
-       # For compatibility with behavior pre-Titan-0.5.0, stop
-       # processing gremlin.sh arguments as soon as the -e switch is
-       # seen; everything following -e becomes arguments to the
-       # ScriptExecutor main class
-       break;;
     l) eval GREMLIN_LOG_LEVEL=\$$OPTIND
        OPTIND="$(( $OPTIND + 1 ))"
        if [ "$GREMLIN_LOG_LEVEL" = "TRACE" -o \
@@ -80,23 +87,18 @@ while getopts "elv" opt; do
 	   SCRIPT_DEBUG=y
        fi
        ;;
-    v) MAIN_CLASS=org.apache.tinkerpop.gremlin.util.Gremlin
     esac
 done
 
-# Remove processed options from $@. Anything after -e is preserved by the break;; in the case
-shift $(( $OPTIND - 1 ))
-
-if [ -z "${JAVA_OPTIONS:-}" ]; then
-    JAVA_OPTIONS="-Dtinkerpop.ext=$DIR/../ext -Dlog4j.configuration=conf/log4j-console.properties -Dgremlin.log4j.level=$GREMLIN_LOG_LEVEL"
-fi
+JAVA_OPTIONS="${JAVA_OPTIONS} -Dtinkerpop.ext=${USER_EXT_DIR:-${SYSTEM_EXT_DIR}} -Dlog4j.configuration=conf/log4j-console.properties -Dgremlin.log4j.level=$GREMLIN_LOG_LEVEL"
+JAVA_OPTIONS=$(awk -v RS=' ' '!/^$/ {if (!x[$0]++) print}' <<< "${JAVA_OPTIONS}" | grep -v '^$' | paste -sd ' ' -)
 
 if [ -n "$SCRIPT_DEBUG" ]; then
+    # in debug mode enable debugging of :install command
+    JAVA_OPTIONS="${JAVA_OPTIONS} -Divy.message.logger.level=4 -Dgroovy.grape.report.downloads=true"
     echo "CLASSPATH: $CLASSPATH"
     set -x
 fi
 
-# include the following in $JAVA_OPTIONS "-Divy.message.logger.level=4 -Dgroovy.grape.report.downloads=true" to debug :install
-
 # Start the JVM, execute the application, and return its exit code
-exec $JAVA $JAVA_OPTIONS $MAIN_CLASS "$@"
+exec $JAVA $JAVA_OPTIONS org.apache.tinkerpop.gremlin.console.Console "$@"

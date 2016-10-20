@@ -21,13 +21,15 @@ package org.apache.tinkerpop.gremlin.structure.io.graphson;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.io.Io;
 import org.apache.tinkerpop.gremlin.structure.io.IoRegistry;
-import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoMapper;
+import org.apache.tinkerpop.gremlin.structure.io.Mapper;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Constructs GraphSON IO implementations given a {@link Graph} and {@link IoRegistry}. Implementers of the {@link Graph}
@@ -38,10 +40,14 @@ import java.io.OutputStream;
 public final class GraphSONIo implements Io<GraphSONReader.Builder, GraphSONWriter.Builder, GraphSONMapper.Builder> {
     private final IoRegistry registry;
     private final Graph graph;
+    private final Optional<Consumer<Mapper.Builder>> onMapper;
+    private final GraphSONVersion version;
 
-    private GraphSONIo(final IoRegistry registry, final Graph graph) {
-        this.registry = registry;
-        this.graph = graph;
+    private GraphSONIo(final Builder builder) {
+        this.registry = builder.registry;
+        this.graph = builder.graph;
+        this.onMapper = Optional.ofNullable(builder.onMapper);
+        this.version = builder.version;
     }
 
     /**
@@ -65,7 +71,10 @@ public final class GraphSONIo implements Io<GraphSONReader.Builder, GraphSONWrit
      */
     @Override
     public GraphSONMapper.Builder mapper() {
-        return (null == this.registry) ? GraphSONMapper.build() : GraphSONMapper.build().addRegistry(registry);
+        final GraphSONMapper.Builder builder = (null == this.registry) ?
+                GraphSONMapper.build().version(version) : GraphSONMapper.build().version(version).addRegistry(this.registry);
+        onMapper.ifPresent(c -> c.accept(builder));
+        return builder;
     }
 
     /**
@@ -88,18 +97,44 @@ public final class GraphSONIo implements Io<GraphSONReader.Builder, GraphSONWrit
         }
     }
 
+    /**
+     * Create a new builder using the default version of GraphSON.
+     */
     public static Io.Builder<GraphSONIo> build() {
-        return new Builder();
+        return build(GraphSONVersion.V1_0);
+    }
+
+    /**
+     * Create a new builder using the specified version of GraphSON.
+     */
+    public static Io.Builder<GraphSONIo> build(final GraphSONVersion version) {
+        return new Builder(version);
     }
 
     public final static class Builder implements Io.Builder<GraphSONIo> {
 
         private IoRegistry registry = null;
         private Graph graph;
+        private Consumer<Mapper.Builder> onMapper = null;
+        private final GraphSONVersion version;
 
+        Builder(final GraphSONVersion version) {
+            this.version = version;
+        }
+
+        /**
+         * @deprecated As of release 3.2.2, replaced by {@link #onMapper(Consumer)}.
+         */
+        @Deprecated
         @Override
         public Io.Builder<GraphSONIo> registry(final IoRegistry registry) {
             this.registry = registry;
+            return this;
+        }
+
+        @Override
+        public Io.Builder<? extends Io> onMapper(final Consumer<Mapper.Builder> onMapper) {
+            this.onMapper = onMapper;
             return this;
         }
 
@@ -112,7 +147,7 @@ public final class GraphSONIo implements Io<GraphSONReader.Builder, GraphSONWrit
         @Override
         public GraphSONIo create() {
             if (null == graph) throw new IllegalArgumentException("The graph argument was not specified");
-            return new GraphSONIo(registry, graph);
+            return new GraphSONIo(this);
         }
     }
 }

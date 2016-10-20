@@ -18,12 +18,13 @@
  */
 package org.apache.tinkerpop.gremlin.driver.ser;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.UnpooledByteBufAllocator;
 import org.apache.tinkerpop.gremlin.driver.MessageSerializer;
-import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseStatusCode;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
-import org.apache.tinkerpop.gremlin.process.traversal.step.util.Tree;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
@@ -32,9 +33,6 @@ import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedEdge;
 import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedVertex;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerFactory;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerGraph;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.junit.Test;
 
@@ -44,10 +42,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 
 /**
  * Serializer tests that cover non-lossy serialization/deserialization methods.
@@ -56,7 +51,7 @@ import static org.junit.Assert.assertNull;
  */
 public class GryoMessageSerializerV1d0Test {
     private static final Map<String, Object> config = new HashMap<String, Object>() {{
-        put("serializeResultToString", true);
+        put(GryoMessageSerializerV1d0.TOKEN_SERIALIZE_RESULT_TO_STRING, true);
     }};
 
     private UUID requestId = UUID.fromString("6457272A-4018-4538-B9AE-08DD5DDC0AA1");
@@ -65,101 +60,8 @@ public class GryoMessageSerializerV1d0Test {
 
     public MessageSerializer binarySerializer = new GryoMessageSerializerV1d0();
 
-    public MessageSerializer textSerializer = new GryoMessageSerializerV1d0();
-
-    public GryoMessageSerializerV1d0Test() {
-        textSerializer.configure(config, null);
-    }
-
     @Test
-    public void serializeIterable() throws Exception {
-        final ArrayList<Integer> list = new ArrayList<>();
-        list.add(1);
-        list.add(100);
-
-        final ResponseMessage response = convertBinary(list);
-        assertCommon(response);
-
-        final List<Integer> deserializedFunList = (List<Integer>) response.getResult().getData();
-        assertEquals(2, deserializedFunList.size());
-        assertEquals(new Integer(1), deserializedFunList.get(0));
-        assertEquals(new Integer(100), deserializedFunList.get(1));
-    }
-
-    @Test
-    public void serializeIterableToString() throws Exception {
-        final ArrayList<Integer> list = new ArrayList<>();
-        list.add(1);
-        list.add(100);
-
-        final ResponseMessage response = convertText(list);
-        assertCommon(response);
-
-        final List deserializedFunList = (List) response.getResult().getData();
-        assertEquals(2, deserializedFunList.size());
-        assertEquals("1", deserializedFunList.get(0));
-        assertEquals("100", deserializedFunList.get(1));
-    }
-
-    @Test
-    public void serializeIterableToStringWithNull() throws Exception {
-        final ArrayList<Integer> list = new ArrayList<>();
-        list.add(1);
-        list.add(null);
-        list.add(100);
-
-        final ResponseMessage response = convertText(list);
-        assertCommon(response);
-
-        final List deserializedFunList = (List) response.getResult().getData();
-        assertEquals(3, deserializedFunList.size());
-        assertEquals("1", deserializedFunList.get(0).toString());
-        assertEquals("null", deserializedFunList.get(1).toString());
-        assertEquals("100", deserializedFunList.get(2).toString());
-    }
-
-    @Test
-    public void serializeIterableWithNull() throws Exception {
-        final ArrayList<Integer> list = new ArrayList<>();
-        list.add(1);
-        list.add(null);
-        list.add(100);
-
-        final ResponseMessage response = convertBinary(list);
-        assertCommon(response);
-
-        final List<Integer> deserializedFunList = (List<Integer>) response.getResult().getData();
-        assertEquals(3, deserializedFunList.size());
-        assertEquals(new Integer(1), deserializedFunList.get(0));
-        assertNull(deserializedFunList.get(1));
-        assertEquals(new Integer(100), deserializedFunList.get(2));
-    }
-
-    @Test
-    public void serializeMap() throws Exception {
-        final Map<String, Object> map = new HashMap<>();
-        final Map<String, String> innerMap = new HashMap<>();
-        innerMap.put("a", "b");
-
-        map.put("x", 1);
-        map.put("y", "some");
-        map.put("z", innerMap);
-
-        final ResponseMessage response = convertBinary(map);
-        assertCommon(response);
-
-        final Map<String, Object> deserializedMap = (Map<String, Object>) response.getResult().getData();
-        assertEquals(3, deserializedMap.size());
-        assertEquals(1, deserializedMap.get("x"));
-        assertEquals("some", deserializedMap.get("y"));
-
-        final Map<String, String> deserializedInnerMap = (Map<String, String>) deserializedMap.get("z");
-        assertEquals(1, deserializedInnerMap.size());
-        assertEquals("b", deserializedInnerMap.get("a"));
-    }
-
-    @Test
-    public void serializeEdge() throws Exception {
+    public void shouldSerializeEdge() throws Exception {
         final Graph g = TinkerGraph.open();
         final Vertex v1 = g.addVertex();
         final Vertex v2 = g.addVertex();
@@ -187,31 +89,7 @@ public class GryoMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeTree() throws Exception {
-        final Graph g = TinkerFactory.createModern();
-        final Tree t = g.traversal().V().out().out().tree().by("name").next();
-
-        final ResponseMessage response = convertBinary(t);
-        assertCommon(response);
-
-        final Tree deserialized = (Tree) response.getResult().getData();
-        assertEquals(t, deserialized);
-
-        assertThat(deserialized.containsKey("marko"), is(true));
-        assertEquals(1, deserialized.size());
-
-        final Tree markoChildren = (Tree) deserialized.get("marko");
-        assertThat(markoChildren.containsKey("josh"), is(true));
-        assertEquals(1, markoChildren.size());
-
-        final Tree joshChildren = (Tree) markoChildren.get("josh");
-        assertThat(joshChildren.containsKey("lop"), is(true));
-        assertThat(joshChildren.containsKey("ripple"), is(true));
-        assertEquals(2, joshChildren.size());
-    }
-
-    @Test
-    public void serializeVertexWithEmbeddedMap() throws Exception {
+    public void shouldSerializeVertexWithEmbeddedMap() throws Exception {
         final Graph g = TinkerGraph.open();
         final Vertex v = g.addVertex();
         final Map<String, Object> map = new HashMap<>();
@@ -251,7 +129,7 @@ public class GryoMessageSerializerV1d0Test {
     }
 
     @Test
-    public void serializeToMapWithElementForKey() throws Exception {
+    public void shouldSerializeToMapWithElementForKey() throws Exception {
         final TinkerGraph graph = TinkerFactory.createClassic();
         final GraphTraversalSource g = graph.traversal();
         final Map<Vertex, Integer> map = new HashMap<>();
@@ -273,59 +151,6 @@ public class GryoMessageSerializerV1d0Test {
         assertEquals(new Integer(1000), deserializedMap.values().iterator().next());
     }
 
-    @Test
-    public void serializeFullResponseMessage() throws Exception {
-        final UUID id = UUID.randomUUID();
-
-        final Map<String, Object> metaData = new HashMap<>();
-        metaData.put("test", "this");
-        metaData.put("one", 1);
-
-        final Map<String, Object> attributes = new HashMap<>();
-        attributes.put("test", "that");
-        attributes.put("two", 2);
-
-        final ResponseMessage response = ResponseMessage.build(id)
-                .responseMetaData(metaData)
-                .code(ResponseStatusCode.SUCCESS)
-                .result("some-result")
-                .statusAttributes(attributes)
-                .statusMessage("worked")
-                .create();
-
-        final ByteBuf bb = binarySerializer.serializeResponseAsBinary(response, allocator);
-        final ResponseMessage deserialized = binarySerializer.deserializeResponse(bb);
-
-        assertEquals(id, deserialized.getRequestId());
-        assertEquals("this", deserialized.getResult().getMeta().get("test"));
-        assertEquals(1, deserialized.getResult().getMeta().get("one"));
-        assertEquals("some-result", deserialized.getResult().getData());
-        assertEquals("that", deserialized.getStatus().getAttributes().get("test"));
-        assertEquals(2, deserialized.getStatus().getAttributes().get("two"));
-        assertEquals(ResponseStatusCode.SUCCESS.getValue(), deserialized.getStatus().getCode().getValue());
-        assertEquals("worked", deserialized.getStatus().getMessage());
-    }
-
-    @Test
-    public void serializeFullRequestMessage() throws Exception {
-        final UUID id = UUID.randomUUID();
-
-        final RequestMessage request = RequestMessage.build("try")
-                .overrideRequestId(id)
-                .processor("pro")
-                .addArg("test", "this")
-                .create();
-        final ByteBuf bb = binarySerializer.serializeRequestAsBinary(request, allocator);
-        final int mimeLen = bb.readByte();
-        bb.readBytes(new byte[mimeLen]);
-        final RequestMessage deserialized = binarySerializer.deserializeRequest(bb);
-
-        assertEquals(id, deserialized.getRequestId());
-        assertEquals("pro", deserialized.getProcessor());
-        assertEquals("try", deserialized.getOp());
-        assertEquals("this", deserialized.getArgs().get("test"));
-    }
-
     private void assertCommon(final ResponseMessage response) {
         assertEquals(requestId, response.getRequestId());
         assertEquals(ResponseStatusCode.SUCCESS, response.getStatus().getCode());
@@ -334,10 +159,5 @@ public class GryoMessageSerializerV1d0Test {
     private ResponseMessage convertBinary(final Object toSerialize) throws SerializationException {
         final ByteBuf bb = binarySerializer.serializeResponseAsBinary(responseMessageBuilder.result(toSerialize).create(), allocator);
         return binarySerializer.deserializeResponse(bb);
-    }
-
-    private ResponseMessage convertText(final Object toSerialize) throws SerializationException {
-        final ByteBuf bb = textSerializer.serializeResponseAsBinary(responseMessageBuilder.result(toSerialize).create(), allocator);
-        return textSerializer.deserializeResponse(bb);
     }
 }

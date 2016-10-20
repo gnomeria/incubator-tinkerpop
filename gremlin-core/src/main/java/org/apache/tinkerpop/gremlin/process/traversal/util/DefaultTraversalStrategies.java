@@ -21,8 +21,6 @@ package org.apache.tinkerpop.gremlin.process.traversal.util;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategies;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategy;
-import org.apache.tinkerpop.gremlin.process.traversal.traverser.TraverserGeneratorFactory;
-import org.apache.tinkerpop.gremlin.process.traversal.traverser.util.DefaultTraverserGeneratorFactory;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
 
 import java.util.ArrayList;
@@ -36,23 +34,24 @@ import java.util.Optional;
 public class DefaultTraversalStrategies implements TraversalStrategies {
 
     protected List<TraversalStrategy<?>> traversalStrategies = new ArrayList<>();
-    protected TraverserGeneratorFactory traverserGeneratorFactory = DefaultTraverserGeneratorFactory.instance();
 
     @Override
+    @SuppressWarnings({"unchecked", "varargs"})
     public TraversalStrategies addStrategies(final TraversalStrategy<?>... strategies) {
-        boolean added = false;
-        for (final TraversalStrategy strategy : strategies) {
-            if (!this.traversalStrategies.contains(strategy)) {
-                this.traversalStrategies.add(strategy);
-                added = true;
+        final List<TraversalStrategy<?>> concurrent = new ArrayList<>(this.traversalStrategies);
+        for (final TraversalStrategy<?> addStrategy : strategies) {
+            for (final TraversalStrategy<?> currentStrategy : concurrent) {
+                if (addStrategy.getClass().equals(currentStrategy.getClass()))
+                    this.traversalStrategies.remove(currentStrategy);
             }
         }
-        if (added) this.traversalStrategies = TraversalStrategies.sortStrategies(this.traversalStrategies);
+        Collections.addAll(this.traversalStrategies, strategies);
+        this.traversalStrategies = TraversalStrategies.sortStrategies(this.traversalStrategies);
         return this;
     }
 
-    @SuppressWarnings("unchecked")
     @Override
+    @SuppressWarnings({"unchecked", "varargs"})
     public TraversalStrategies removeStrategies(final Class<? extends TraversalStrategy>... strategyClasses) {
         boolean removed = false;
         for (final Class<? extends TraversalStrategy> strategyClass : strategyClasses) {
@@ -62,13 +61,23 @@ public class DefaultTraversalStrategies implements TraversalStrategies {
                 removed = true;
             }
         }
-        if (removed) this.traversalStrategies = TraversalStrategies.sortStrategies(this.traversalStrategies);
+        if (removed)
+            this.traversalStrategies = TraversalStrategies.sortStrategies(this.traversalStrategies);
         return this;
     }
 
     @Override
     public List<TraversalStrategy<?>> toList() {
         return Collections.unmodifiableList(this.traversalStrategies);
+    }
+
+    @Override
+    public <T extends TraversalStrategy> Optional<T> getStrategy(final Class<T> traversalStrategyClass) {
+        for (final TraversalStrategy<?> traversalStrategy : this.traversalStrategies) {
+            if (traversalStrategyClass.isAssignableFrom(traversalStrategy.getClass()))
+                return (Optional) Optional.of(traversalStrategy);
+        }
+        return Optional.empty();
     }
 
     @Override
@@ -79,20 +88,10 @@ public class DefaultTraversalStrategies implements TraversalStrategies {
     }
 
     @Override
-    public TraverserGeneratorFactory getTraverserGeneratorFactory() {
-        return this.traverserGeneratorFactory;
-    }
-
-    @Override
-    public void setTraverserGeneratorFactory(final TraverserGeneratorFactory traverserGeneratorFactory) {
-        this.traverserGeneratorFactory = traverserGeneratorFactory;
-    }
-
-    @Override
     public DefaultTraversalStrategies clone() {
         try {
             final DefaultTraversalStrategies clone = (DefaultTraversalStrategies) super.clone();
-            clone.traversalStrategies = new ArrayList<>();
+            clone.traversalStrategies = new ArrayList<>(this.traversalStrategies.size());
             clone.traversalStrategies.addAll(this.traversalStrategies);
             return clone;
         } catch (final CloneNotSupportedException e) {

@@ -18,8 +18,10 @@
  */
 package org.apache.tinkerpop.gremlin.driver;
 
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.channel.Channel;
+import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
+import io.netty.handler.codec.http.websocketx.PingWebSocketFrame;
+import org.apache.tinkerpop.gremlin.driver.exception.ConnectionException;
 import org.apache.tinkerpop.gremlin.driver.handler.NioGremlinRequestEncoder;
 import org.apache.tinkerpop.gremlin.driver.handler.NioGremlinResponseDecoder;
 import org.apache.tinkerpop.gremlin.driver.handler.WebSocketClientHandler;
@@ -35,13 +37,11 @@ import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.websocketx.WebSocketClientHandshakerFactory;
 import io.netty.handler.codec.http.websocketx.WebSocketVersion;
 import io.netty.handler.ssl.SslContext;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Client-side channel initializer interface.  It is responsible for constructing the Netty {@code ChannelPipeline}
@@ -57,6 +57,29 @@ public interface Channelizer extends ChannelHandler {
     public void init(final Connection connection);
 
     /**
+     * Called on {@link Connection#close()} to perform an {@code Channelizer} specific functions.  Note that the
+     * {@link Connection} already calls {@code Channel.close()} so there is no need to call that method here.
+     * An implementation will typically use this method to send a {@code Channelizer} specific message to the
+     * server to notify of shutdown coming from the client side (e.g. a "close" websocket frame).
+     */
+    public void close(final Channel channel);
+
+    /**
+     * Create a message for the driver to use as a "keep-alive" for the connection. This method will only be used if
+     * {@link #supportsKeepAlive()} is {@code true}.
+     */
+    public default Object createKeepAliveMessage() {
+        return null;
+    }
+
+    /**
+     * Determines if the channelizer supports a method for keeping the connection to the server alive.
+     */
+    public default boolean supportsKeepAlive() {
+        return false;
+    }
+
+    /**
      * Called after the channel connects. The {@code Channelizer} may need to perform some functions, such as a
      * handshake.
      */
@@ -67,8 +90,6 @@ public interface Channelizer extends ChannelHandler {
      * Base implementation of the client side {@link Channelizer}.
      */
     abstract class AbstractChannelizer extends ChannelInitializer<SocketChannel> implements Channelizer {
-        private static final Logger logger = LoggerFactory.getLogger(AbstractChannelizer.class);
-
         protected Connection connection;
         protected Cluster cluster;
         private ConcurrentMap<UUID, ResultQueue> pending;
@@ -87,6 +108,11 @@ public interface Channelizer extends ChannelHandler {
         }
 
         @Override
+        public void close(final Channel channel) {
+            // do nothing
+        }
+
+        @Override
         public void init(final Connection connection) {
             this.connection = connection;
             this.cluster = connection.getCluster();
@@ -99,15 +125,7 @@ public interface Channelizer extends ChannelHandler {
             final Optional<SslContext> sslCtx;
             if (supportsSsl()) {
                 try {
-                    final SslContextBuilder builder = SslContextBuilder.forClient();
-                    if (cluster.connectionPoolSettings().trustCertChainFile != null)
-                        builder.trustManager(new File(cluster.connectionPoolSettings().trustCertChainFile));
-                    else {
-                        logger.warn("SSL configured without a trustCertChainFile and thus trusts all certificates without verification (not suitable for production)");
-                        builder.trustManager(InsecureTrustManagerFactory.INSTANCE);
-                    }
-
-                    sslCtx = Optional.of(builder.build());
+                    sslCtx = Optional.of(cluster.createSSLContext());
                 } catch (Exception ex) {
                     throw new RuntimeException(ex);
                 }
@@ -141,6 +159,29 @@ public interface Channelizer extends ChannelHandler {
             webSocketGremlinResponseDecoder = new WebSocketGremlinResponseDecoder(cluster.getSerializer());
         }
 
+        /**
+         * Keep-alive is supported through the ping/pong websocket protocol.
+         *
+         * @see <a href=https://tools.ietf.org/html/rfc6455#section-5.5.2>IETF RFC 6455</a>
+         */
+        @Override
+        public boolean supportsKeepAlive() {
+            return true;
+        }
+
+        @Override
+        public Object createKeepAliveMessage() {
+            return new PingWebSocketFrame();
+        }
+
+        /**
+         * Sends a {@code CloseWebSocketFrame} to the server for the specified channel.
+         */
+        @Override
+        public void close(final Channel channel) {
+            if (channel.isOpen()) channel.writeAndFlush(new CloseWebSocketFrame());
+        }
+
         @Override
         public boolean supportsSsl() {
             final String scheme = connection.getUri().getScheme();
@@ -171,9 +212,13 @@ public interface Channelizer extends ChannelHandler {
         @Override
         public void connected() {
             try {
-                handler.handshakeFuture().sync();
+                // block for a few seconds - if the handshake takes longer than there's gotta be issues with that
+                // server. more than likely, SSL is enabled on the server, but the client forgot to enable it or
+                // perhaps the server is not configured for websockets.
+                handler.handshakeFuture().get(15000, TimeUnit.MILLISECONDS);
             } catch (Exception ex) {
-                throw new RuntimeException(ex);
+                throw new RuntimeException(new ConnectionException(connection.getUri(),
+                        "Could not complete websocket handshake - ensure that client protocol matches server", ex));
             }
         }
     }

@@ -18,10 +18,16 @@
  */
 package org.apache.tinkerpop.gremlin.server.handler;
 
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.Attribute;
+
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Base64;
 import org.apache.tinkerpop.gremlin.driver.Tokens;
 import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseMessage;
@@ -60,14 +66,29 @@ public class SaslAuthenticationHandler extends ChannelInboundHandlerAdapter {
             final Attribute<RequestMessage> request = ctx.attr(StateKey.REQUEST_MESSAGE);
             if (negotiator.get() == null) {
                 // First time through so save the request and send an AUTHENTICATE challenge with no data
-                negotiator.set(authenticator.newSaslNegotiator());
+                negotiator.set(authenticator.newSaslNegotiator(getRemoteInetAddress(ctx)));
                 request.set(requestMessage);
                 final ResponseMessage authenticate = ResponseMessage.build(requestMessage)
                         .code(ResponseStatusCode.AUTHENTICATE).create();
                 ctx.writeAndFlush(authenticate);
             } else {
                 if (requestMessage.getOp().equals(Tokens.OPS_AUTHENTICATION) && requestMessage.getArgs().containsKey(Tokens.ARGS_SASL)) {
-                    final byte[] saslResponse = (byte[]) requestMessage.getArgs().get(Tokens.ARGS_SASL);
+                    
+                    final Object saslObject = requestMessage.getArgs().get(Tokens.ARGS_SASL);
+                    final byte[] saslResponse;
+                    
+                    if (saslObject instanceof byte[]) {
+                        saslResponse = (byte[]) saslObject;
+                    } else if(saslObject instanceof String) {
+                        saslResponse = Base64.getDecoder().decode((String) saslObject);
+                    } else {
+                        final ResponseMessage error = ResponseMessage.build(request.get())
+                                .statusMessage("Incorrect type for : " + Tokens.ARGS_SASL + ". byte[] or String is expected")
+                                .code(ResponseStatusCode.REQUEST_ERROR_MALFORMED_REQUEST).create();
+                        ctx.writeAndFlush(error);
+                        return;
+                    }
+                    
                     try {
                         final byte[] saslMessage = negotiator.get().evaluateResponse(saslResponse);
                         if (negotiator.get().isComplete()) {
@@ -104,5 +125,20 @@ public class SaslAuthenticationHandler extends ChannelInboundHandlerAdapter {
                     this.getClass().getSimpleName(), msg.getClass());
             ctx.close();
         }
+    }
+
+    private InetAddress getRemoteInetAddress(ChannelHandlerContext ctx)
+    {
+        Channel channel = ctx.channel();
+
+        if (null == channel)
+            return null;
+
+        SocketAddress genericSocketAddr = channel.remoteAddress();
+
+        if (null == genericSocketAddr || !(genericSocketAddr instanceof InetSocketAddress))
+            return null;
+
+        return ((InetSocketAddress)genericSocketAddr).getAddress();
     }
 }

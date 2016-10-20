@@ -23,17 +23,24 @@ import org.apache.tinkerpop.gremlin.groovy.DefaultImportCustomizerProvider;
 import org.apache.tinkerpop.gremlin.groovy.jsr223.DependencyManager;
 import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngine;
 import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngineFactory;
+import org.apache.tinkerpop.gremlin.groovy.jsr223.customizer.ConfigurationCustomizerProvider;
 import org.apache.tinkerpop.gremlin.groovy.plugin.GremlinPlugin;
 import org.apache.tinkerpop.gremlin.groovy.plugin.IllegalEnvironmentException;
+import org.apache.tinkerpop.gremlin.jsr223.DefaultGremlinScriptEngineManager;
+import org.apache.tinkerpop.gremlin.jsr223.GremlinScriptEngine;
+import org.apache.tinkerpop.gremlin.jsr223.GremlinScriptEngineManager;
+import org.apache.tinkerpop.gremlin.process.traversal.Bytecode;
+import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.script.Bindings;
 import javax.script.Compilable;
 import javax.script.CompiledScript;
+import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
+import javax.script.SimpleBindings;
 import java.io.Reader;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
@@ -61,13 +68,13 @@ import java.util.stream.Stream;
 public class ScriptEngines implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(ScriptEngines.class);
 
-    private final static ScriptEngineManager SCRIPT_ENGINE_MANAGER = new ScriptEngineManager();
+    private final static GremlinScriptEngineManager SCRIPT_ENGINE_MANAGER = new DefaultGremlinScriptEngineManager();
     private static final GremlinGroovyScriptEngineFactory gremlinGroovyScriptEngineFactory = new GremlinGroovyScriptEngineFactory();
 
     /**
      * {@code ScriptEngine} objects configured for the server keyed on the language name.
      */
-    private final Map<String, ScriptEngine> scriptEngines = new ConcurrentHashMap<>();
+    private final Map<String, GremlinScriptEngine> scriptEngines = new ConcurrentHashMap<>();
 
     private final AtomicBoolean controlOperationExecuting = new AtomicBoolean(false);
     private final Queue<Thread> controlWaiters = new ConcurrentLinkedQueue<>();
@@ -85,6 +92,18 @@ public class ScriptEngines implements AutoCloseable {
         this.initializer.accept(this);
     }
 
+    public Traversal.Admin eval(final Bytecode bytecode, final Bindings bindings, final String language) throws ScriptException {
+        if (!scriptEngines.containsKey(language))
+            throw new IllegalArgumentException(String.format("Language [%s] not supported", language));
+
+        awaitControlOp();
+
+        final GremlinScriptEngine engine = scriptEngines.get(language);
+        final Bindings all = mergeBindings(bindings, engine);
+
+        return engine.eval(bytecode, all);
+    }
+
     /**
      * Evaluate a script with {@code Bindings} for a particular language.
      */
@@ -93,7 +112,11 @@ public class ScriptEngines implements AutoCloseable {
             throw new IllegalArgumentException(String.format("Language [%s] not supported", language));
 
         awaitControlOp();
-        return scriptEngines.get(language).eval(script, bindings);
+
+        final ScriptEngine engine = scriptEngines.get(language);
+        final Bindings all = mergeBindings(bindings, engine);
+
+        return engine.eval(script, all);
     }
 
     /**
@@ -105,14 +128,18 @@ public class ScriptEngines implements AutoCloseable {
             throw new IllegalArgumentException("Language [%s] not supported");
 
         awaitControlOp();
-        return scriptEngines.get(language).eval(reader, bindings);
+
+        final ScriptEngine engine = scriptEngines.get(language);
+        final Bindings all = mergeBindings(bindings, engine);
+
+        return engine.eval(reader, all);
     }
 
     /**
      * Compiles a script without executing it.
      *
      * @throws UnsupportedOperationException if the {@link ScriptEngine} implementation does not implement
-     * the {@link javax.script.Compilable} interface.
+     *                                       the {@link javax.script.Compilable} interface.
      */
     public CompiledScript compile(final String script, final String language) throws ScriptException {
         if (!scriptEngines.containsKey(language))
@@ -131,7 +158,7 @@ public class ScriptEngines implements AutoCloseable {
      * Compiles a script without executing it.
      *
      * @throws UnsupportedOperationException if the {@link ScriptEngine} implementation does not implement
-     * the {@link javax.script.Compilable} interface.
+     *                                       the {@link javax.script.Compilable} interface.
      */
     public CompiledScript compile(final Reader script, final String language) throws ScriptException {
         if (!scriptEngines.containsKey(language))
@@ -157,8 +184,8 @@ public class ScriptEngines implements AutoCloseable {
             if (scriptEngines.containsKey(language))
                 scriptEngines.remove(language);
 
-            final ScriptEngine scriptEngine = createScriptEngine(language, imports, staticImports, config)
-                    .orElseThrow(() -> new IllegalArgumentException("Language [%s] not supported"));
+            final GremlinScriptEngine scriptEngine = createScriptEngine(language, imports, staticImports, config)
+                    .orElseThrow(() -> new IllegalArgumentException(String.format("Language [%s] not supported", language)));
             scriptEngines.put(language, scriptEngine);
 
             logger.info("Loaded {} ScriptEngine", language);
@@ -339,13 +366,13 @@ public class ScriptEngines implements AutoCloseable {
      * thread until that process completes.
      */
     private void awaitControlOp() {
-        if(controlWaiters.size() > 0 || controlOperationExecuting.get()) {
+        if (controlWaiters.size() > 0 || controlOperationExecuting.get()) {
             evalWaiters.add(Thread.currentThread());
             LockSupport.park(this);
         }
     }
 
-    private static synchronized Optional<ScriptEngine> createScriptEngine(final String language,
+    private static synchronized Optional<GremlinScriptEngine> createScriptEngine(final String language,
                                                                           final Set<String> imports,
                                                                           final Set<String> staticImports,
                                                                           final Map<String, Object> config) {
@@ -360,9 +387,9 @@ public class ScriptEngines implements AutoCloseable {
             // CompilerCustomizerProvider.  the value is a list of arguments to pass to an available constructor.
             // the arguments must match in terms of type, so given that configuration typically comes from yaml
             // or properties file, it is best to stick to primitive values when possible here for simplicity.
-            final Map<String,Object> compilerCustomizerProviders = (Map<String,Object>) config.getOrDefault(
+            final Map<String, Object> compilerCustomizerProviders = (Map<String, Object>) config.getOrDefault(
                     "compilerCustomizerProviders", Collections.emptyMap());
-            compilerCustomizerProviders.forEach((k,v) -> {
+            compilerCustomizerProviders.forEach((k, v) -> {
                 try {
                     final Class providerClass = Class.forName(k);
                     if (v != null && v instanceof List && ((List) v).size() > 0) {
@@ -372,21 +399,57 @@ public class ScriptEngines implements AutoCloseable {
 
                         final Class<?>[] argClasses = new Class<?>[args.length];
                         Stream.of(args).map(a -> a.getClass()).collect(Collectors.toList()).toArray(argClasses);
-                        final Constructor constructor = providerClass.getConstructor(argClasses);
-                        providers.add((CompilerCustomizerProvider) constructor.newInstance(args));
+
+                        final Optional<Constructor> constructor = Stream.of(providerClass.getConstructors())
+                                .filter(c -> c.getParameterCount() == argClasses.length &&
+                                        allMatch(c.getParameterTypes(), argClasses))
+                                .findFirst();
+
+                        if (constructor.isPresent()) providers.add((CompilerCustomizerProvider)
+                                constructor.get().newInstance(args));
+                        else
+                            throw new IllegalStateException(String.format("Could not configure %s with the supplied options %s",
+                                    ConfigurationCustomizerProvider.class.getName(), Arrays.asList(args)));
                     } else {
                         providers.add((CompilerCustomizerProvider) providerClass.newInstance());
                     }
-                } catch(Exception ex) {
-                    logger.warn("Could not instantiate CompilerCustomizerProvider implementation [{}].  It will not be applied.", k);
+                } catch (Exception ex) {
+                    logger.warn(String.format("Could not instantiate CompilerCustomizerProvider implementation [%s].  It will not be applied.", k), ex);
                 }
             });
 
             final CompilerCustomizerProvider[] providerArray = new CompilerCustomizerProvider[providers.size()];
-            return Optional.of((ScriptEngine) new GremlinGroovyScriptEngine(providers.toArray(providerArray)));
+            return Optional.of(new GremlinGroovyScriptEngine(providers.toArray(providerArray)));
         } else {
             return Optional.ofNullable(SCRIPT_ENGINE_MANAGER.getEngineByName(language));
         }
     }
 
+    /**
+     * Determine if the constructor argument types match the arg types that are going to be passed in to that
+     * constructor.
+     */
+    private static boolean allMatch(final Class<?>[] constructorArgTypes, final Class<?>[] argTypes) {
+        for (int ix = 0; ix < constructorArgTypes.length; ix++) {
+            if (!constructorArgTypes[ix].isAssignableFrom(argTypes[ix])) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Takes the bindings from a request for eval and merges them with the {@code ENGINE_SCOPE} bindings.
+     */
+    private static Bindings mergeBindings(final Bindings bindings, final ScriptEngine engine) {
+        // plugins place "globals" here - see ScriptEnginePluginAcceptor
+        final Bindings global = engine.getBindings(ScriptContext.GLOBAL_SCOPE);
+        if (null == global) return bindings;
+
+        // merge the globals with the incoming bindings where local bindings "win"
+        final Bindings all = new SimpleBindings(global);
+        all.putAll(bindings);
+        return all;
+    }
 }

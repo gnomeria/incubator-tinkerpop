@@ -27,8 +27,10 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Map;
 
 import static org.hamcrest.CoreMatchers.startsWith;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
 /**
@@ -54,6 +56,44 @@ public class DriverRemoteAcceptorTest {
     }
 
     @Test(expected = RemoteException.class)
+    public void shouldNotConfigureWithBadCommand() throws Exception {
+        acceptor.configure(Arrays.asList("test"));
+    }
+
+    @Test(expected = RemoteException.class)
+    public void shouldNotConfigureWithUnevenPairsOfAliases() throws Exception {
+        acceptor.configure(Arrays.asList("alias g social x"));
+    }
+
+    @Test
+    public void shouldResetAliases() throws Exception {
+        final Map<String,String> resetAliases = (Map<String,String>) acceptor.configure(Arrays.asList("alias", "g", "main.social"));
+        assertEquals(1, resetAliases.size());
+        assertEquals("main.social", resetAliases.get("g"));
+
+        assertEquals("Aliases cleared", acceptor.configure(Arrays.asList("alias", "reset")));
+
+        final Map<String,String> shownAliases = (Map<String,String>) acceptor.configure(Arrays.asList("alias", "show"));
+        assertEquals(0, shownAliases.size());
+    }
+
+    @Test
+    public void shouldAddOverwriteAndShowAliases() throws Exception {
+        final Map<String,String> aliases = (Map<String,String>) acceptor.configure(Arrays.asList("alias", "g", "social", "graph", "main"));
+        assertEquals(2, aliases.size());
+        assertEquals("social", aliases.get("g"));
+        assertEquals("main", aliases.get("graph"));
+
+        final Map<String,String> resetAliases = (Map<String,String>) acceptor.configure(Arrays.asList("alias", "g", "main.social"));
+        assertEquals(1, resetAliases.size());
+        assertEquals("main.social", resetAliases.get("g"));
+
+        final Map<String,String> shownAliases = (Map<String,String>) acceptor.configure(Arrays.asList("alias", "show"));
+        assertEquals(1, shownAliases.size());
+        assertEquals("main.social", shownAliases.get("g"));
+    }
+
+    @Test(expected = RemoteException.class)
     public void shouldNotConnectWithEmptyArgs() throws Exception {
         acceptor.connect(new ArrayList<>());
     }
@@ -69,9 +109,32 @@ public class DriverRemoteAcceptorTest {
     }
 
     @Test
+    public void shouldConfigureTimeoutToMax() throws Exception {
+        acceptor.configure(Arrays.asList("timeout", "max"));
+        assertEquals(Integer.MAX_VALUE, acceptor.getTimeout());
+    }
+
+    @Test
+    public void shouldConfigureTimeoutToNone() throws Exception {
+        acceptor.configure(Arrays.asList("timeout", "none"));
+        assertEquals(DriverRemoteAcceptor.NO_TIMEOUT, acceptor.getTimeout());
+    }
+
+    @Test
+    public void shouldConfigureTimeout() throws Exception {
+        acceptor.configure(Arrays.asList("timeout", "123456"));
+        assertEquals(123456, acceptor.getTimeout());
+    }
+
+    @Test(expected = RemoteException.class)
+    public void shouldConfigureTimeoutNotLessThanNoTimeout() throws Exception {
+        acceptor.configure(Arrays.asList("timeout", "-1"));
+    }
+
+    @Test
     public void shouldConnect() throws Exception {
         // there is no gremlin server running for this test, but gremlin-driver lazily connects so this should
         // be ok to just validate that a connection is created
-        assertThat(acceptor.connect(Arrays.asList(TestHelper.generateTempFileFromResource(this.getClass(), "remote.yaml", ".tmp").getAbsolutePath())).toString(), startsWith("Connected - "));
+        assertThat(acceptor.connect(Arrays.asList(TestHelper.generateTempFileFromResource(this.getClass(), "remote.yaml", ".tmp").getAbsolutePath())).toString(), startsWith("Configured "));
     }
 }

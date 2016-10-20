@@ -21,8 +21,11 @@ package org.apache.tinkerpop.gremlin.structure;
 import org.apache.tinkerpop.gremlin.ExceptionCoverage;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputerTest;
+import org.apache.tinkerpop.gremlin.process.computer.Memory;
 import org.apache.tinkerpop.gremlin.process.traversal.CoreTraversalTest;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -42,6 +45,7 @@ import static org.junit.Assert.assertTrue;
  * @author Pieter Martin
  */
 public class ExceptionCoverageTest {
+    private static final Logger logger = LoggerFactory.getLogger(ExceptionCoverageTest.class);
 
     @Test
     public void shouldCoverAllExceptionsInTests() {
@@ -52,6 +56,7 @@ public class ExceptionCoverageTest {
                 Element.Exceptions.class,
                 Graph.Exceptions.class,
                 GraphComputer.Exceptions.class,
+                Memory.Exceptions.class,
                 Graph.Variables.Exceptions.class,
                 Property.Exceptions.class,
                 Transaction.Exceptions.class,
@@ -65,9 +70,12 @@ public class ExceptionCoverageTest {
         final Set<String> ignore = new HashSet<String>() {{
             // this is a general exception to be used as needed. it is not explicitly tested:
             add("org.apache.tinkerpop.gremlin.structure.Graph$Exceptions#argumentCanNotBeNull");
-            add("org.apache.tinkerpop.gremlin.structure.Graph$Exceptions#traversalEngineNotSupported");
 
-            // todo: need to write consistency tests for the following items still...........
+            // deprecated exceptions
+            add("org.apache.tinkerpop.gremlin.structure.Element$Exceptions#elementAlreadyRemoved"); // as of 3.1.0
+            add("org.apache.tinkerpop.gremlin.structure.Graph$Exceptions#traversalEngineNotSupported"); // as of 3.2.0
+
+            // need to write consistency tests for the following items still...........
             add("org.apache.tinkerpop.gremlin.process.computer.GraphComputer$Exceptions#supportsDirectObjects");
         }};
 
@@ -95,7 +103,7 @@ public class ExceptionCoverageTest {
         Stream.of(exceptionDefinitionClasses).flatMap(c -> Stream.of(c.getDeclaredMethods()).map((Method m) -> String.format("%s#%s", c.getName(), m.getName())))
                 .filter(s -> !ignore.contains(s))
                 .forEach(s -> {
-                    System.out.println(s);
+                    logger.info(s);
                     assertTrue(implementedExceptions.contains(s));
                 });
     }

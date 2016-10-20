@@ -18,38 +18,39 @@
  */
 package org.apache.tinkerpop.gremlin.process.traversal.step.map;
 
+import org.apache.tinkerpop.gremlin.process.traversal.NumberHelper;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
-import org.apache.tinkerpop.gremlin.process.computer.KeyValue;
-import org.apache.tinkerpop.gremlin.process.computer.MapReduce;
-import org.apache.tinkerpop.gremlin.process.computer.traversal.TraversalVertexProgram;
-import org.apache.tinkerpop.gremlin.process.computer.util.StaticMapReduce;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.ReducingBarrierStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.MapReducer;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.TraverserRequirement;
-import org.apache.tinkerpop.gremlin.process.traversal.traverser.util.TraverserSet;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.util.function.MeanNumberSupplier;
 
 import java.io.Serializable;
 import java.util.EnumSet;
-import java.util.Iterator;
 import java.util.Set;
-import java.util.function.BiFunction;
+import java.util.function.BinaryOperator;
 import java.util.function.Supplier;
+
+import static org.apache.tinkerpop.gremlin.process.traversal.NumberHelper.div;
+import static org.apache.tinkerpop.gremlin.process.traversal.NumberHelper.mul;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  * @author Daniel Kuppitz (http://gremlin.guru)
  */
-public final class MeanGlobalStep<S extends Number, E extends Number> extends ReducingBarrierStep<S, E> implements MapReducer {
+public final class MeanGlobalStep<S extends Number, E extends Number> extends ReducingBarrierStep<S, E> {
 
     private static final Set<TraverserRequirement> REQUIREMENTS = EnumSet.of(TraverserRequirement.OBJECT, TraverserRequirement.BULK);
 
     public MeanGlobalStep(final Traversal.Admin traversal) {
         super(traversal);
         this.setSeedSupplier((Supplier) MeanNumberSupplier.instance());
-        this.setBiFunction((BiFunction) MeanGlobalBiFunction.instance());
+        this.setReducingBiOperator(MeanGlobalBiOperator.INSTANCE);
+    }
+
+    @Override
+    public E projectTraverser(final Traverser.Admin<S> traverser) {
+        return (E) new MeanNumber(traverser.get(), traverser.bulk());
     }
 
     @Override
@@ -58,145 +59,84 @@ public final class MeanGlobalStep<S extends Number, E extends Number> extends Re
     }
 
     @Override
-    public MapReduce<Number, Long, Number, Long, Double> getMapReduce() {
-        return MeanGlobalMapReduce.instance();
+    public E generateFinalResult(final E meanNumber) {
+        return (E) ((MeanNumber) meanNumber).getFinal();
     }
 
     /////
 
-    private static class MeanGlobalBiFunction<S extends Number> implements BiFunction<S, Traverser<S>, S>, Serializable {
+    public static final class MeanGlobalBiOperator<S extends Number> implements BinaryOperator<S>, Serializable {
 
-        private static final MeanGlobalBiFunction INSTANCE = new MeanGlobalBiFunction();
-
-        private MeanGlobalBiFunction() {
-
-        }
+        private static final MeanGlobalBiOperator INSTANCE = new MeanGlobalBiOperator();
 
         @Override
-        public S apply(final S mutatingSeed, final Traverser<S> traverser) {
-            return (S) ((MeanNumber) mutatingSeed).add(traverser.get(), traverser.bulk());
-        }
-
-        public final static <S extends Number> MeanGlobalBiFunction<S> instance() {
-            return INSTANCE;
+        public S apply(final S mutatingSeed, final S number) {
+            if (mutatingSeed instanceof MeanNumber) {
+                return (number instanceof MeanNumber) ?
+                        (S) ((MeanNumber) mutatingSeed).add((MeanNumber) number) :
+                        (S) ((MeanNumber) mutatingSeed).add(number, 1l);
+            } else {
+                return (number instanceof MeanNumber) ?
+                        (S) ((MeanNumber) number).add(mutatingSeed, 1l) :
+                        (S) new MeanNumber(number, 1l).add(mutatingSeed, 1l);
+            }
         }
     }
 
-    ///////////
-
-    private static final class MeanGlobalMapReduce extends StaticMapReduce<Number, Long, Number, Long, Double> {
-
-        private static final MeanGlobalMapReduce INSTANCE = new MeanGlobalMapReduce();
-
-        private MeanGlobalMapReduce() {
-
-        }
-
-        @Override
-        public boolean doStage(final MapReduce.Stage stage) {
-            return true;
-        }
-
-        @Override
-        public void map(final Vertex vertex, final MapEmitter<Number, Long> emitter) {
-            vertex.<TraverserSet<Number>>property(TraversalVertexProgram.HALTED_TRAVERSERS).ifPresent(traverserSet -> traverserSet.forEach(traverser -> emitter.emit(traverser.get(), traverser.bulk())));
-        }
-
-        @Override
-        public void combine(final Number key, final Iterator<Long> values, final ReduceEmitter<Number, Long> emitter) {
-            this.reduce(key, values, emitter);
-        }
-
-        @Override
-        public void reduce(final Number key, final Iterator<Long> values, final ReduceEmitter<Number, Long> emitter) {
-            long counter = 0;
-            while (values.hasNext()) {
-                counter = counter + values.next();
-            }
-            emitter.emit(key, counter);
-        }
-
-        @Override
-        public String getMemoryKey() {
-            return REDUCING;
-        }
-
-        @Override
-        public Double generateFinalResult(final Iterator<KeyValue<Number, Long>> keyValues) {
-            if (keyValues.hasNext()) {
-                KeyValue<Number, Long> pair = keyValues.next();
-                double result = pair.getKey().doubleValue() * pair.getValue();
-                long counter = pair.getValue();
-                while (keyValues.hasNext()) {
-                    pair = keyValues.next();
-                    result += pair.getKey().doubleValue() * pair.getValue();
-                    counter += pair.getValue();
-                }
-                return result / counter;
-            }
-            return Double.NaN;
-        }
-
-        public static final MeanGlobalMapReduce instance() {
-            return INSTANCE;
-        }
-    }
-
-    ///
-
-    public static final class MeanNumber extends Number implements Comparable<Number>, FinalGet<Double> {
+    public static final class MeanNumber extends Number implements Comparable<Number> {
 
         private long count;
-        private double sum;
+        private Number sum;
 
         public MeanNumber() {
-            this(0.0d, 0l);
+            this(0, 0);
         }
 
-        public MeanNumber(final double number, final long count) {
+        public MeanNumber(final Number number, final long count) {
             this.count = count;
-            this.sum = number * count;
+            this.sum = mul(number, count);
         }
 
         public MeanNumber add(final Number amount, final long count) {
             this.count += count;
-            this.sum += amount.doubleValue() * count;
+            this.sum = NumberHelper.add(sum, mul(amount, count));
             return this;
         }
 
         public MeanNumber add(final MeanNumber other) {
             this.count += other.count;
-            this.sum += other.sum;
+            this.sum = NumberHelper.add(sum, other.sum);
             return this;
         }
 
         @Override
         public int intValue() {
-            return (int) (this.sum / this.count);
+            return div(this.sum, this.count).intValue();
         }
 
         @Override
         public long longValue() {
-            return (long) (this.sum / this.count);
+            return div(this.sum, this.count).longValue();
         }
 
         @Override
         public float floatValue() {
-            return (float) (this.sum / this.count);
+            return div(this.sum, this.count, true).floatValue();
         }
 
         @Override
         public double doubleValue() {
-            return this.sum / this.count;
+            return div(this.sum, this.count, true).doubleValue();
         }
 
         @Override
         public String toString() {
-            return Double.toString(this.doubleValue());
+            return getFinal().toString();
         }
 
         @Override
         public int compareTo(final Number number) {
+            // TODO: NumberHelper should provide a compareTo() implementation
             return Double.valueOf(this.doubleValue()).compareTo(number.doubleValue());
         }
 
@@ -210,9 +150,8 @@ public final class MeanGlobalStep<S extends Number, E extends Number> extends Re
             return Double.valueOf(this.doubleValue()).hashCode();
         }
 
-        @Override
-        public Double getFinal() {
-            return this.doubleValue();
+        public Number getFinal() {
+            return div(this.sum, this.count, true);
         }
     }
 }

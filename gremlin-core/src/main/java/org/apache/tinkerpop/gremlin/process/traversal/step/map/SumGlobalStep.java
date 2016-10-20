@@ -18,29 +18,23 @@
  */
 package org.apache.tinkerpop.gremlin.process.traversal.step.map;
 
-import org.apache.tinkerpop.gremlin.process.computer.KeyValue;
-import org.apache.tinkerpop.gremlin.process.computer.MapReduce;
-import org.apache.tinkerpop.gremlin.process.computer.traversal.TraversalVertexProgram;
-import org.apache.tinkerpop.gremlin.process.computer.util.StaticMapReduce;
+import org.apache.tinkerpop.gremlin.process.traversal.Operator;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
-import org.apache.tinkerpop.gremlin.process.traversal.step.MapReducer;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.ReducingBarrierStep;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.TraverserRequirement;
-import org.apache.tinkerpop.gremlin.process.traversal.traverser.util.TraverserSet;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.util.function.ConstantSupplier;
 
-import java.io.Serializable;
 import java.util.EnumSet;
-import java.util.Iterator;
 import java.util.Set;
-import java.util.function.BiFunction;
+import java.util.function.BinaryOperator;
+
+import static org.apache.tinkerpop.gremlin.process.traversal.NumberHelper.mul;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  */
-public final class SumGlobalStep extends ReducingBarrierStep<Number, Double> implements MapReducer {
+public final class SumGlobalStep<S extends Number> extends ReducingBarrierStep<S, S> {
 
     private static final Set<TraverserRequirement> REQUIREMENTS = EnumSet.of(
             TraverserRequirement.BULK,
@@ -49,89 +43,18 @@ public final class SumGlobalStep extends ReducingBarrierStep<Number, Double> imp
 
     public SumGlobalStep(final Traversal.Admin traversal) {
         super(traversal);
-        this.setSeedSupplier(new ConstantSupplier<>(0.0d));
-        this.setBiFunction(SumGlobalBiFunction.instance());
+        this.setSeedSupplier(new ConstantSupplier<>((S) Integer.valueOf(0)));
+        this.setReducingBiOperator((BinaryOperator) Operator.sum);
+    }
+
+    @Override
+    public S projectTraverser(final Traverser.Admin<S> traverser) {
+        return (S) mul(traverser.get(), traverser.bulk());
     }
 
 
     @Override
     public Set<TraverserRequirement> getRequirements() {
         return REQUIREMENTS;
-    }
-
-    @Override
-    public MapReduce<MapReduce.NullObject, Number, MapReduce.NullObject, Number, Number> getMapReduce() {
-        return SumGlobalMapReduce.instance();
-    }
-
-    /////
-
-    private static class SumGlobalBiFunction<S extends Number> implements BiFunction<Double, Traverser<S>, Double>, Serializable {
-
-        private static final SumGlobalBiFunction INSTANCE = new SumGlobalBiFunction();
-
-        private SumGlobalBiFunction() {
-
-        }
-
-        @Override
-        public Double apply(final Double mutatingSeed, final Traverser<S> traverser) {
-            return mutatingSeed + (traverser.get().doubleValue() * traverser.bulk());
-        }
-
-        public final static <S extends Number> SumGlobalBiFunction<S> instance() {
-            return INSTANCE;
-        }
-    }
-
-    ///////////
-
-    private static class SumGlobalMapReduce extends StaticMapReduce<MapReduce.NullObject, Number, MapReduce.NullObject, Number, Number> {
-
-        private static final SumGlobalMapReduce INSTANCE = new SumGlobalMapReduce();
-
-        private SumGlobalMapReduce() {
-
-        }
-
-        @Override
-        public boolean doStage(final MapReduce.Stage stage) {
-            return true;
-        }
-
-        @Override
-        public void map(final Vertex vertex, final MapEmitter<NullObject, Number> emitter) {
-            vertex.<TraverserSet<Number>>property(TraversalVertexProgram.HALTED_TRAVERSERS).ifPresent(traverserSet -> traverserSet.forEach(traverser -> emitter.emit(traverser.get().doubleValue() * traverser.bulk())));
-        }
-
-        @Override
-        public void combine(final NullObject key, final Iterator<Number> values, final ReduceEmitter<NullObject, Number> emitter) {
-            this.reduce(key, values, emitter);
-        }
-
-        @Override
-        public void reduce(final NullObject key, final Iterator<Number> values, final ReduceEmitter<NullObject, Number> emitter) {
-            if (values.hasNext()) {
-                Number sum = values.next();
-                while (values.hasNext()) {
-                    sum = sum.doubleValue() + values.next().doubleValue();
-                }
-                emitter.emit(sum);
-            }
-        }
-
-        @Override
-        public String getMemoryKey() {
-            return REDUCING;
-        }
-
-        @Override
-        public Number generateFinalResult(final Iterator<KeyValue<NullObject, Number>> keyValues) {
-            return keyValues.hasNext() ? keyValues.next().getValue() : 0.0d;
-        }
-
-        public static final SumGlobalMapReduce instance() {
-            return INSTANCE;
-        }
     }
 }

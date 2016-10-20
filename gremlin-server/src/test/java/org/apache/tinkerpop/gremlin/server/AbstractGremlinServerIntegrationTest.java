@@ -22,6 +22,8 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.InputStream;
@@ -35,7 +37,10 @@ import static org.junit.Assume.assumeThat;
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public abstract class AbstractGremlinServerIntegrationTest {
-    private GremlinServer server;
+    protected GremlinServer server;
+    private final static String epollOption = "gremlin.server.epoll";
+    private static final boolean GREMLIN_SERVER_EPOLL = "true".equalsIgnoreCase(System.getProperty(epollOption));
+    private static final Logger logger = LoggerFactory.getLogger(AbstractGremlinServerIntegrationTest.class);
 
     @Rule
     public TestName name = new TestName();
@@ -50,13 +55,20 @@ public abstract class AbstractGremlinServerIntegrationTest {
 
     @Before
     public void setUp() throws Exception {
-        System.out.println("* Testing: " + name.getMethodName());
+        logger.info("* Testing: " + name.getMethodName());
+        logger.info("* Epoll option enabled:" + GREMLIN_SERVER_EPOLL);
 
+        startServer();
+    }
+
+    public void startServer() throws Exception {
         final InputStream stream = getSettingsInputStream();
         final Settings settings = Settings.read(stream);
-
         final Settings overridenSettings = overrideSettings(settings);
         ServerTestHelper.rewritePathsInGremlinServerSettings(overridenSettings);
+        if (GREMLIN_SERVER_EPOLL) {
+            overridenSettings.useEpollEventLoop = true;
+        }
 
         this.server = new GremlinServer(overridenSettings);
 

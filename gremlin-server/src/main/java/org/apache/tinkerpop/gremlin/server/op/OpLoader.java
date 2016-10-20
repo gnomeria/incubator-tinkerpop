@@ -19,17 +19,19 @@
 package org.apache.tinkerpop.gremlin.server.op;
 
 import org.apache.tinkerpop.gremlin.server.OpProcessor;
+import org.apache.tinkerpop.gremlin.server.Settings;
 import org.apache.tinkerpop.gremlin.server.op.standard.StandardOpProcessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.ServiceLoader;
 
 /**
- * Uses {@code ServiceLoader} to load {@link OpProcessor} instances into a cache.
+ * Uses {@link ServiceLoader} to load {@link OpProcessor} instances into a cache.
  *
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
@@ -49,7 +51,31 @@ public final class OpLoader {
         });
     }
 
+    private static volatile boolean initialized = false;
+
+    /**
+     * Initialize the {@code OpLoader} with server settings. This method should only be called once at startup but is
+     * designed to be idempotent.
+     */
+    public static synchronized void init(final Settings settings) {
+        if (!initialized) {
+            processors.values().forEach(processor -> processor.init(settings));
+            initialized = true;
+        }
+    }
+
+    /**
+     * Gets an {@link OpProcessor} by its name. If it cannot be found an {@link Optional#EMPTY} is returned.
+     */
     public static Optional<OpProcessor> getProcessor(final String name) {
         return Optional.ofNullable(processors.get(name));
+    }
+
+    /**
+     * Gets a read-only map of the processors where the key is the {@link OpProcessor} name and the value is the
+     * instance created by {@link ServiceLoader}.
+     */
+    public static Map<String, OpProcessor> getProcessors() {
+        return Collections.unmodifiableMap(processors);
     }
 }

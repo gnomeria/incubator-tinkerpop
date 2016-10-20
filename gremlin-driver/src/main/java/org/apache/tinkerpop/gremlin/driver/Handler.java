@@ -18,6 +18,7 @@
  */
 package org.apache.tinkerpop.gremlin.driver;
 
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.tinkerpop.gremlin.driver.exception.ResponseException;
 import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
 import org.apache.tinkerpop.gremlin.driver.message.ResponseMessage;
@@ -27,6 +28,8 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import io.netty.util.ReferenceCountUtil;
+import org.apache.tinkerpop.gremlin.driver.ser.SerializationException;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,7 +61,7 @@ import javax.security.sasl.SaslException;
 final class Handler {
 
     /**
-     * Generic SASL handler that will authenticate against the gremlin server. 
+     * Generic SASL handler that will authenticate against the gremlin server.
      */
     static class GremlinSaslAuthenticationHandler extends SimpleChannelInboundHandler<ResponseMessage> implements CallbackHandler {
         private static final Logger logger = LoggerFactory.getLogger(GremlinSaslAuthenticationHandler.class);
@@ -80,16 +83,31 @@ final class Handler {
             if (response.getStatus().getCode() == ResponseStatusCode.AUTHENTICATE) {
                 final Attribute<SaslClient> saslClient = channelHandlerContext.attr(saslClientKey);
                 final Attribute<Subject> subject = channelHandlerContext.attr(subjectKey);
-                byte[] saslResponse;
+                final RequestMessage.Builder messageBuilder = RequestMessage.build(Tokens.OPS_AUTHENTICATION);
                 // First time through we don't have a sasl client
                 if (saslClient.get() == null) {
                     subject.set(login());
-                    saslClient.set(saslClient(getHostName(channelHandlerContext)));
-                    saslResponse = saslClient.get().hasInitialResponse() ? evaluateChallenge(subject, saslClient, NULL_CHALLENGE) : null;
+                    try {
+                        saslClient.set(saslClient(getHostName(channelHandlerContext)));
+                    } catch (SaslException saslException) {
+                        // push the sasl error into a failure response from the server. this ensures that standard
+                        // processing for the ResultQueue is kept. without this SaslException trap and subsequent
+                        // conversion to an authentication failure, the close() of the connection might not
+                        // succeed as it will appear as though pending messages remain present in the queue on the
+                        // connection and the shutdown won't proceed
+                        final ResponseMessage clientSideError = ResponseMessage.build(response.getRequestId())
+                                .code(ResponseStatusCode.FORBIDDEN).statusMessage(saslException.getMessage()).create();
+                        channelHandlerContext.fireChannelRead(clientSideError);
+                        return;
+                    }
+
+                    messageBuilder.addArg(Tokens.ARGS_SASL_MECHANISM, getMechanism());
+                    messageBuilder.addArg(Tokens.ARGS_SASL, saslClient.get().hasInitialResponse() ?
+                                                                evaluateChallenge(subject, saslClient, NULL_CHALLENGE) : null);
                 } else {
-                    saslResponse = evaluateChallenge(subject, saslClient, (byte[])response.getResult().getData());
+                    messageBuilder.addArg(Tokens.ARGS_SASL, evaluateChallenge(subject, saslClient, (byte[])response.getResult().getData()));
                 }
-                channelHandlerContext.writeAndFlush(RequestMessage.build(Tokens.OPS_AUTHENTICATION).addArg(Tokens.ARGS_SASL, saslResponse).create());
+                channelHandlerContext.writeAndFlush(messageBuilder.create());
             } else {
                 channelHandlerContext.fireChannelRead(response);
             }
@@ -111,7 +129,7 @@ final class Handler {
             }
         }
 
-        private byte[] evaluateChallenge(final Attribute<Subject> subject, final Attribute<SaslClient> saslClient, 
+        private byte[] evaluateChallenge(final Attribute<Subject> subject, final Attribute<SaslClient> saslClient,
                                          final byte[] challenge) throws SaslException {
 
             if (subject.get() == null) {
@@ -129,15 +147,15 @@ final class Handler {
         private Subject login() throws LoginException {
             // Login if the user provided us with an entry into the JAAS config file
             if (authProps.get(AuthProperties.Property.JAAS_ENTRY) != null) {
-                LoginContext login = new LoginContext(authProps.get(AuthProperties.Property.JAAS_ENTRY));
+                final LoginContext login = new LoginContext(authProps.get(AuthProperties.Property.JAAS_ENTRY));
                 login.login();
-                return login.getSubject();                    
+                return login.getSubject();
             }
             return null;
         }
 
         private SaslClient saslClient(final String hostname) throws SaslException {
-            return Sasl.createSaslClient(new String[] { getMechanism() }, null, authProps.get(AuthProperties.Property.PROTOCOL), 
+            return Sasl.createSaslClient(new String[] { getMechanism() }, null, authProps.get(AuthProperties.Property.PROTOCOL),
                                          hostname, SASL_PROPERTIES, this);
         }
 
@@ -146,7 +164,7 @@ final class Handler {
         }
 
         /**
-         * Work out the Sasl mechanism based on the user supplied parameters. 
+         * Work out the Sasl mechanism based on the user supplied parameters.
          * If we have a username and password use PLAIN otherwise GSSAPI
          */
         private String getMechanism() {
@@ -175,21 +193,39 @@ final class Handler {
         protected void channelRead0(final ChannelHandlerContext channelHandlerContext, final ResponseMessage response) throws Exception {
             try {
                 final ResponseStatusCode statusCode = response.getStatus().getCode();
+                final ResultQueue queue = pending.get(response.getRequestId());
                 if (statusCode == ResponseStatusCode.SUCCESS || statusCode == ResponseStatusCode.PARTIAL_CONTENT) {
                     final Object data = response.getResult().getData();
-                    if (data instanceof List) {
-                        // unrolls the collection into individual results to be handled by the queue.
-                        final List<Object> listToUnroll = (List<Object>) data;
-                        final ResultQueue queue = pending.get(response.getRequestId());
-                        listToUnroll.forEach(item -> queue.add(new Result(item)));
+                    final Map<String,Object> meta = response.getResult().getMeta();
+
+                    if (!meta.containsKey(Tokens.ARGS_SIDE_EFFECT_KEY)) {
+                        // this is a "result" from the server which is either the result of a script or a
+                        // serialized traversal
+                        if (data instanceof List) {
+                            // unrolls the collection into individual results to be handled by the queue.
+                            final List<Object> listToUnroll = (List<Object>) data;
+                            listToUnroll.forEach(item -> queue.add(new Result(item)));
+                        } else {
+                            // since this is not a list it can just be added to the queue
+                            queue.add(new Result(response.getResult().getData()));
+                        }
                     } else {
-                        // since this is not a list it can just be added to the queue
-                        pending.get(response.getRequestId()).add(new Result(response.getResult().getData()));
+                        // this is the side-effect from the server which is generated from a serialized traversal
+                        final String aggregateTo = meta.getOrDefault(Tokens.ARGS_AGGREGATE_TO, Tokens.VAL_AGGREGATE_TO_NONE).toString();
+                        if (data instanceof List) {
+                            // unrolls the collection into individual results to be handled by the queue.
+                            final List<Object> listOfSideEffects = (List<Object>) data;
+                            listOfSideEffects.forEach(sideEffect -> queue.addSideEffect(aggregateTo, sideEffect));
+                        } else {
+                            // since this is not a list it can just be added to the queue. this likely shouldn't occur
+                            // however as the protocol will typically push everything to list first.
+                            queue.addSideEffect(aggregateTo, data);
+                        }
                     }
                 } else {
                     // this is a "success" but represents no results otherwise it is an error
                     if (statusCode != ResponseStatusCode.NO_CONTENT)
-                        pending.get(response.getRequestId()).markError(new ResponseException(response.getStatus().getCode(), response.getStatus().getMessage()));
+                        queue.markError(new ResponseException(response.getStatus().getCode(), response.getStatus().getMessage()));
                 }
 
                 // as this is a non-PARTIAL_CONTENT code - the stream is done
@@ -207,13 +243,15 @@ final class Handler {
             // if this happens enough times (like the client is unable to deserialize a response) the pending
             // messages queue will not clear.  wonder if there is some way to cope with that.  of course, if
             // there are that many failures someone would take notice and hopefully stop the client.
-            logger.error("Could not process the response - correct the problem and restart the driver.", cause);
+            logger.error("Could not process the response", cause);
 
-            // the channel is getting closed because of something pretty bad so release all the completeable
-            // futures out there
-            pending.entrySet().stream().forEach(kv -> kv.getValue().markError(cause));
+            // the channel took an error because of something pretty bad so release all the futures out there
+            pending.values().forEach(val -> val.markError(cause));
+            pending.clear();
 
-            ctx.close();
+            // serialization exceptions should not close the channel - that's worth a retry
+            if (!IteratorUtils.anyMatch(ExceptionUtils.getThrowableList(cause).iterator(), t -> t instanceof SerializationException))
+                ctx.close();
         }
     }
 

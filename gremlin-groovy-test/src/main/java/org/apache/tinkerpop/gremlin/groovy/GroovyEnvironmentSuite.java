@@ -22,10 +22,12 @@ import org.apache.tinkerpop.gremlin.AbstractGremlinSuite;
 import org.apache.tinkerpop.gremlin.AbstractGremlinTest;
 import org.apache.tinkerpop.gremlin.GraphManager;
 import org.apache.tinkerpop.gremlin.groovy.engine.GremlinExecutorOverGraphTest;
+import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngineFileSandboxTest;
 import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngineOverGraphTest;
 import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngineSandboxCustomTest;
 import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngineSandboxedStandardTest;
 import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngineTinkerPopSandboxTest;
+import org.apache.tinkerpop.gremlin.groovy.jsr223.GroovyTranslatorTest;
 import org.apache.tinkerpop.gremlin.groovy.loaders.SugarLoader;
 import org.apache.tinkerpop.gremlin.groovy.loaders.SugarLoaderTest;
 import org.apache.tinkerpop.gremlin.groovy.plugin.dsl.credential.CredentialGraphTest;
@@ -58,7 +60,9 @@ public class GroovyEnvironmentSuite extends AbstractGremlinSuite {
             GremlinGroovyScriptEngineSandboxCustomTest.class,
             GremlinGroovyScriptEngineSandboxedStandardTest.class,
             GremlinGroovyScriptEngineTinkerPopSandboxTest.class,
+            GremlinGroovyScriptEngineFileSandboxTest.class,
             GremlinExecutorOverGraphTest.class,
+            GroovyTranslatorTest.class,
             SugarLoaderTest.class,
     };
 

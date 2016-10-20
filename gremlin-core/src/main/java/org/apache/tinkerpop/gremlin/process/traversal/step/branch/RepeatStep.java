@@ -61,19 +61,33 @@ public final class RepeatStep<S> extends ComputerAwareStep<S, S> implements Trav
 
     @SuppressWarnings("unchecked")
     public void setRepeatTraversal(final Traversal.Admin<S, S> repeatTraversal) {
+        if (null != this.repeatTraversal)
+            throw new IllegalStateException("The repeat()-step already has its loop section declared: " + this);
         this.repeatTraversal = repeatTraversal; // .clone();
         this.repeatTraversal.addStep(new RepeatEndStep(this.repeatTraversal));
         this.integrateChild(this.repeatTraversal);
     }
 
     public void setUntilTraversal(final Traversal.Admin<S, ?> untilTraversal) {
+        if (null != this.untilTraversal)
+            throw new IllegalStateException("The repeat()-step already has its until()-modulator declared: " + this);
         if (null == this.repeatTraversal) this.untilFirst = true;
         this.untilTraversal = this.integrateChild(untilTraversal);
     }
 
+    public Traversal.Admin<S, ?> getUntilTraversal() {
+        return this.untilTraversal;
+    }
+
     public void setEmitTraversal(final Traversal.Admin<S, ?> emitTraversal) {
+        if (null != this.emitTraversal)
+            throw new IllegalStateException("The repeat()-step already has its emit()-modulator declared: " + this);
         if (null == this.repeatTraversal) this.emitFirst = true;
         this.emitTraversal = this.integrateChild(emitTraversal);
+    }
+
+    public Traversal.Admin<S, ?> getEmitTraversal() {
+        return this.emitTraversal;
     }
 
     public List<Traversal.Admin<S, S>> getGlobalChildren() {
@@ -122,12 +136,20 @@ public final class RepeatStep<S> extends ComputerAwareStep<S, S> implements Trav
     @Override
     public RepeatStep<S> clone() {
         final RepeatStep<S> clone = (RepeatStep<S>) super.clone();
-        clone.repeatTraversal = clone.integrateChild(this.repeatTraversal.clone());
+        clone.repeatTraversal = this.repeatTraversal.clone();
         if (null != this.untilTraversal)
-            clone.untilTraversal = clone.integrateChild(this.untilTraversal.clone());
+            clone.untilTraversal = this.untilTraversal.clone();
         if (null != this.emitTraversal)
-            clone.emitTraversal = clone.integrateChild(this.emitTraversal.clone());
+            clone.emitTraversal = this.emitTraversal.clone();
         return clone;
+    }
+
+    @Override
+    public void setTraversal(final Traversal.Admin<?, ?> parentTraversal) {
+        super.setTraversal(parentTraversal);
+        this.integrateChild(this.repeatTraversal);
+        this.integrateChild(this.untilTraversal);
+        this.integrateChild(this.emitTraversal);
     }
 
     @Override
@@ -143,7 +165,7 @@ public final class RepeatStep<S> extends ComputerAwareStep<S, S> implements Trav
     }
 
     @Override
-    protected Iterator<Traverser<S>> standardAlgorithm() throws NoSuchElementException {
+    protected Iterator<Traverser.Admin<S>> standardAlgorithm() throws NoSuchElementException {
         while (true) {
             if (this.repeatTraversal.getEndStep().hasNext()) {
                 return this.repeatTraversal.getEndStep();
@@ -164,7 +186,7 @@ public final class RepeatStep<S> extends ComputerAwareStep<S, S> implements Trav
     }
 
     @Override
-    protected Iterator<Traverser<S>> computerAlgorithm() throws NoSuchElementException {
+    protected Iterator<Traverser.Admin<S>> computerAlgorithm() throws NoSuchElementException {
         final Traverser.Admin<S> start = this.starts.next();
         if (doUntil(start, true)) {
             start.resetLoops();
@@ -224,26 +246,27 @@ public final class RepeatStep<S> extends ComputerAwareStep<S, S> implements Trav
 
     ///////////////////////////////////
 
-    public class RepeatEndStep extends ComputerAwareStep<S, S> {
+    public static class RepeatEndStep<S> extends ComputerAwareStep<S, S> {
 
         public RepeatEndStep(final Traversal.Admin traversal) {
             super(traversal);
         }
 
         @Override
-        protected Iterator<Traverser<S>> standardAlgorithm() throws NoSuchElementException {
+        protected Iterator<Traverser.Admin<S>> standardAlgorithm() throws NoSuchElementException {
+            final RepeatStep<S> repeatStep = (RepeatStep<S>) this.getTraversal().getParent();
             while (true) {
                 final Traverser.Admin<S> start = this.starts.next();
                 start.incrLoops(this.getId());
-                if (doUntil(start, false)) {
+                if (repeatStep.doUntil(start, false)) {
                     start.resetLoops();
                     return IteratorUtils.of(start);
                 } else {
-                    if (!RepeatStep.this.untilFirst && !RepeatStep.this.emitFirst)
-                        RepeatStep.this.repeatTraversal.addStart(start);
+                    if (!repeatStep.untilFirst && !repeatStep.emitFirst)
+                        repeatStep.repeatTraversal.addStart(start);
                     else
-                        RepeatStep.this.addStart(start);
-                    if (doEmit(start, false)) {
+                        repeatStep.addStart(start);
+                    if (repeatStep.doEmit(start, false)) {
                         final Traverser.Admin<S> emitSplit = start.split();
                         emitSplit.resetLoops();
                         return IteratorUtils.of(emitSplit);
@@ -253,20 +276,22 @@ public final class RepeatStep<S> extends ComputerAwareStep<S, S> implements Trav
         }
 
         @Override
-        protected Iterator<Traverser<S>> computerAlgorithm() throws NoSuchElementException {
+        protected Iterator<Traverser.Admin<S>> computerAlgorithm() throws NoSuchElementException {
+            final RepeatStep<S> repeatStep = (RepeatStep<S>) this.getTraversal().getParent();
             final Traverser.Admin<S> start = this.starts.next();
-            start.incrLoops(RepeatStep.this.getId());
-            if (doUntil(start, false)) {
+            start.incrLoops(repeatStep.getId());
+            if (repeatStep.doUntil(start, false)) {
                 start.resetLoops();
-                start.setStepId(RepeatStep.this.getNextStep().getId());
-                start.addLabels(RepeatStep.this.labels);
+                start.setStepId(repeatStep.getNextStep().getId());
+                start.addLabels(repeatStep.labels);
                 return IteratorUtils.of(start);
             } else {
-                start.setStepId(RepeatStep.this.getId());
-                if (doEmit(start, false)) {
+                start.setStepId(repeatStep.getId());
+                if (repeatStep.doEmit(start, false)) {
                     final Traverser.Admin<S> emitSplit = start.split();
                     emitSplit.resetLoops();
-                    emitSplit.setStepId(RepeatStep.this.getNextStep().getId());
+                    emitSplit.setStepId(repeatStep.getNextStep().getId());
+                    emitSplit.addLabels(repeatStep.labels);
                     return IteratorUtils.of(start, emitSplit);
                 }
                 return IteratorUtils.of(start);

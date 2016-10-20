@@ -49,22 +49,16 @@ public abstract class AbstractNeo4jGraphProvider extends AbstractGraphProvider {
         add(Neo4jVertexProperty.class);
     }};
 
-    protected String cleanParameters(String methodName) {
-        int random = (int) (Math.random() * Integer.MAX_VALUE);
-        return methodName.replaceAll("[0-9, -]+$", String.valueOf(random));
-    }
-
     @Override
     public void clear(final Graph graph, final Configuration configuration) throws Exception {
         if (null != graph) {
-            if (graph.features().graph().supportsTransactions() && graph.tx().isOpen())
-                graph.tx().rollback();
+            if (graph.tx().isOpen()) graph.tx().rollback();
             graph.close();
         }
 
-        if (configuration.containsKey("gremlin.neo4j.directory")) {
+        if (configuration.containsKey(Neo4jGraph.CONFIG_DIRECTORY)) {
             // this is a non-in-sideEffects configuration so blow away the directory
-            final File graphDirectory = new File(configuration.getString("gremlin.neo4j.directory"));
+            final File graphDirectory = new File(configuration.getString(Neo4jGraph.CONFIG_DIRECTORY));
             deleteDirectory(graphDirectory);
         }
     }

@@ -19,11 +19,11 @@
 package org.apache.tinkerpop.gremlin.server.op.session;
 
 import org.apache.tinkerpop.gremlin.groovy.engine.GremlinExecutor;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalSource;
 import org.apache.tinkerpop.gremlin.server.Context;
 import org.apache.tinkerpop.gremlin.server.GraphManager;
 import org.apache.tinkerpop.gremlin.server.Settings;
 import org.apache.tinkerpop.gremlin.server.util.LifeCycleHook;
+import org.apache.tinkerpop.gremlin.server.util.ThreadFactoryUtil;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +36,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -51,6 +53,7 @@ public class Session {
     private final ScheduledExecutorService scheduledExecutorService;
     private final long configuredSessionTimeout;
 
+    private AtomicBoolean killing = new AtomicBoolean(false);
     private AtomicReference<ScheduledFuture> kill = new AtomicReference<>();
 
     /**
@@ -60,11 +63,13 @@ public class Session {
      */
     private final GremlinExecutor gremlinExecutor;
 
+    private final ThreadFactory threadFactoryWorker = ThreadFactoryUtil.create("session-%d");
+
     /**
      * By binding the session to run ScriptEngine evaluations in a specific thread, each request will respect
      * the ThreadLocal nature of Graph implementations.
      */
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(threadFactoryWorker);
 
     private final ConcurrentHashMap<String, Session> sessions;
 
@@ -97,28 +102,75 @@ public class Session {
         return executor;
     }
 
+    public String getSessionId() {
+        return session;
+    }
+
+    public boolean acceptingRequests() {
+        return !killing.get();
+    }
+
     public void touch() {
         // if the task of killing is cancelled successfully then reset the session monitor. otherwise this session
         // has already been killed and there's nothing left to do with this session.
-        final ScheduledFuture killFuture = kill.get();
-        if (null == killFuture || !killFuture.isDone()) {
-            if (killFuture != null) killFuture.cancel(false);
-            kill.set(this.scheduledExecutorService.schedule(() -> {
-                // when the session is killed open transaction should be rolled back
-                graphManager.getGraphs().values().forEach(g -> {
-                    if (g.features().graph().supportsTransactions()) {
-                        // have to execute the rollback in the executor because the transaction is associated with
-                        // that thread of execution from this session
-                        this.executor.execute(() -> {
-                            logger.info("Rolling back any open transactions before killing idle session: {}", this.session);
-                            if (g.tx().isOpen()) g.tx().rollback();
-                        });
-                    }
-                });
-                sessions.remove(this.session);
-                logger.info("Kill idle session named {} after {} milliseconds", this.session, this.configuredSessionTimeout);
-            }, this.configuredSessionTimeout, TimeUnit.MILLISECONDS));
-        }
+        kill.updateAndGet(future -> {
+            if (null == future || !future.isDone()) {
+                if (future != null) future.cancel(false);
+                return this.scheduledExecutorService.schedule(() -> {
+                        logger.info("Session {} has been idle for more than {} milliseconds - preparing to close",
+                                this.session, this.configuredSessionTimeout);
+                        kill();
+                    }, this.configuredSessionTimeout, TimeUnit.MILLISECONDS);
+            }
+
+            return future;
+        });
+    }
+
+    /**
+     * Stops the session with call to {@link #kill()} but also stops the session expiration call which ensures that
+     * the session is only killed once.
+     */
+    public void manualKill() {
+        kill.get().cancel(true);
+        kill();
+    }
+
+    /**
+     * Kills the session and rollback any uncommitted changes on transactional graphs.
+     */
+    public synchronized void kill() {
+        killing.set(true);
+
+        // if the session has already been removed then there's no need to do this process again.  it's possible that
+        // the manuallKill and the kill future could have both called kill at roughly the same time. this prevents
+        // kill() from being called more than once
+        if (!sessions.containsKey(session)) return;
+
+        // when the session is killed open transaction should be rolled back
+        graphManager.getGraphs().entrySet().forEach(kv -> {
+            final Graph g = kv.getValue();
+            if (g.features().graph().supportsTransactions()) {
+                // have to execute the rollback in the executor because the transaction is associated with
+                // that thread of execution from this session
+                try {
+                    executor.submit(() -> {
+                        if (g.tx().isOpen()) {
+                            logger.info("Rolling back open transactions on {} before killing session: {}", kv.getKey(), session);
+                            g.tx().rollback();
+                        }
+                    }).get(30000, TimeUnit.MILLISECONDS);
+                } catch (Exception ex) {
+                    logger.warn("An error occurred while attempting rollback when closing session: " + session, ex);
+                }
+            }
+        });
+
+        // prevent any additional requests from processing now that the mass rollback has been completed
+        executor.shutdownNow();
+
+        sessions.remove(session);
+        logger.info("Session {} closed", session);
     }
 
     private GremlinExecutor.Builder initializeGremlinExecutor() {

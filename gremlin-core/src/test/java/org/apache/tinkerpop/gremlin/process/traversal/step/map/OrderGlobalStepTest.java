@@ -22,8 +22,9 @@ import org.apache.tinkerpop.gremlin.process.traversal.Order;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.process.traversal.step.StepTest;
-import org.junit.Ignore;
+import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -31,13 +32,9 @@ import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.outE;
 
 /**
  * @author Daniel Kuppitz (http://gremlin.guru)
+ * @author Marko A. Rodriguez (http://markorodriguez.com)
  */
 public class OrderGlobalStepTest extends StepTest {
-
-    @Override
-    @Ignore("hashCode() doesn't work properly for .order().by()")
-    public void testEquality() {
-    }
 
     @Override
     protected List<Traversal> getTraversals() {
@@ -50,5 +47,21 @@ public class OrderGlobalStepTest extends StepTest {
                 __.order().by("age", Order.incr).by(outE().count(), Order.incr),
                 __.order().by(outE().count(), Order.incr).by("age", Order.incr)
         );
+    }
+
+    @Test
+    public void shouldNotThrowContractException() {
+        for (int x = 0; x < 1000; x++) {
+            final List<Integer> list = new ArrayList<>();
+            for (int i = 0; i < 1000; i++) {
+                list.add(i);
+            }
+            __.inject(list).unfold().order().by(Order.shuffle).iterate();
+            __.inject(list).unfold().order().by().by(Order.shuffle).iterate();
+            __.inject(list).unfold().order().by(Order.shuffle).by().iterate();
+            __.inject(list).unfold().order().by(__.identity(), Order.shuffle).iterate();
+            __.inject(list).unfold().order().by().by(__.identity(), Order.shuffle).iterate();
+            __.inject(list).unfold().order().by(__.identity(), Order.shuffle).by().iterate();
+        }
     }
 }

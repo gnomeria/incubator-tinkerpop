@@ -21,11 +21,15 @@ package org.apache.tinkerpop.gremlin.process;
 import org.apache.tinkerpop.gremlin.AbstractGremlinSuite;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputerTest;
+import org.apache.tinkerpop.gremlin.process.computer.bulkdumping.BulkDumperVertexProgramTest;
 import org.apache.tinkerpop.gremlin.process.computer.bulkloading.BulkLoaderVertexProgramTest;
-import org.apache.tinkerpop.gremlin.process.computer.ranking.PageRankVertexProgramTest;
+import org.apache.tinkerpop.gremlin.process.computer.clustering.peerpressure.PeerPressureVertexProgramTest;
+import org.apache.tinkerpop.gremlin.process.computer.ranking.pagerank.PageRankVertexProgramTest;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
+import org.apache.tinkerpop.gremlin.process.traversal.TraversalInterruptionComputerTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.BranchTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.ChooseTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.branch.OptionalTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.LocalTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.RepeatTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.branch.UnionTest;
@@ -42,20 +46,48 @@ import org.apache.tinkerpop.gremlin.process.traversal.step.filter.SampleTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.SimplePathTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.TailTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.WhereTest;
-import org.apache.tinkerpop.gremlin.process.traversal.step.map.*;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.AddEdgeTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.CoalesceTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.ConstantTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.CountTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.FlatMapTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.FoldTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GraphTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.LoopsTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.MapKeysTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.MapTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.MapValuesTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.MatchTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.MaxTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.MeanTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.MinTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.OrderTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.PageRankTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.PathTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.PeerPressureTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.ProfileTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.ProgramTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.ProjectTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.PropertiesTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.SelectTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.SumTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.UnfoldTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.ValueMapTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.VertexTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.AggregateTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.ExplainTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroupCountTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroupTest;
+import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.GroupTestV3d0;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.InjectTest;
-import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.ProfileTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SackTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SideEffectCapTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SideEffectTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.StoreTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.SubgraphTest;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.TreeTest;
+import org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.TranslationStrategyProcessTest;
 import org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.SubgraphStrategyProcessTest;
-import org.apache.tinkerpop.gremlin.process.traversal.strategy.verification.ComputerVerificationStrategyProcessTest;
 import org.apache.tinkerpop.gremlin.process.traversal.strategy.verification.ReadOnlyStrategyProcessTest;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.StructureStandardSuite;
@@ -65,7 +97,7 @@ import org.junit.runners.model.RunnerBuilder;
 /**
  * The {@code ProcessComputerSuite} is a JUnit test runner that executes the Gremlin Test Suite over a
  * {@link Graph} implementation.  This test suite covers traversal operations around {@link GraphComputer} and should
- * be implemented by vendors to validate that their implementations are compliant with that Gremlin language.
+ * be implemented by providers to validate that their implementations are compliant with that Gremlin language.
  * Implementations that use this test suite should return {@code true} for
  * {@link org.apache.tinkerpop.gremlin.structure.Graph.Features.GraphFeatures#supportsComputer()}.
  * <p/>
@@ -86,6 +118,7 @@ public class ProcessComputerSuite extends AbstractGremlinSuite {
             // branch
             BranchTest.Traversals.class,
             ChooseTest.Traversals.class,
+            OptionalTest.Traversals.class,
             LocalTest.Traversals.class,
             RepeatTest.Traversals.class,
             UnionTest.Traversals.class,
@@ -111,6 +144,7 @@ public class ProcessComputerSuite extends AbstractGremlinSuite {
             CountTest.Traversals.class,
             FlatMapTest.Traversals.class,
             FoldTest.Traversals.class,
+            GraphTest.Traversals.class,
             LoopsTest.Traversals.class,
             MapTest.Traversals.class,
             MapKeysTest.Traversals.class,
@@ -122,7 +156,12 @@ public class ProcessComputerSuite extends AbstractGremlinSuite {
             MinTest.Traversals.class,
             SumTest.Traversals.class,
             OrderTest.Traversals.class,
+            PageRankTest.Traversals.class,
             PathTest.Traversals.class,
+            PeerPressureTest.Traversals.class,
+            ProfileTest.Traversals.class,
+            ProjectTest.Traversals.class,
+            ProgramTest.Traversals.class,
             PropertiesTest.Traversals.class,
             SelectTest.Traversals.class,
             UnfoldTest.Traversals.class,
@@ -132,7 +171,9 @@ public class ProcessComputerSuite extends AbstractGremlinSuite {
             // sideEffect
             AddEdgeTest.Traversals.class,
             AggregateTest.Traversals.class,
+            ExplainTest.Traversals.class,
             GroupTest.Traversals.class,
+            GroupTestV3d0.Traversals.class,
             GroupCountTest.Traversals.class,
             InjectTest.Traversals.class,
             ProfileTest.Traversals.class,
@@ -143,12 +184,17 @@ public class ProcessComputerSuite extends AbstractGremlinSuite {
             SubgraphTest.Traversals.class,
             TreeTest.Traversals.class,
 
+            // compliance
+            TraversalInterruptionComputerTest.class,
+
             // algorithms
             PageRankVertexProgramTest.class,
+            PeerPressureVertexProgramTest.class,
             BulkLoaderVertexProgramTest.class,
+            BulkDumperVertexProgramTest.class,
 
-            // strategy
-            ComputerVerificationStrategyProcessTest.ComputerTraversals.class,
+            // creations
+            TranslationStrategyProcessTest.class,
 
             // decorations
             ReadOnlyStrategyProcessTest.class,
@@ -162,6 +208,7 @@ public class ProcessComputerSuite extends AbstractGremlinSuite {
             // branch
             BranchTest.class,
             ChooseTest.class,
+            OptionalTest.class,
             LocalTest.class,
             RepeatTest.class,
             UnionTest.class,
@@ -194,7 +241,12 @@ public class ProcessComputerSuite extends AbstractGremlinSuite {
             SumTest.class,
             MatchTest.class,
             OrderTest.class,
+            PageRankTest.class,
+            PeerPressureTest.class,
             PathTest.class,
+            ProfileTest.class,
+            ProjectTest.class,
+            ProgramTest.class,
             PropertiesTest.class,
             SelectTest.class,
             UnfoldTest.class,
@@ -207,7 +259,6 @@ public class ProcessComputerSuite extends AbstractGremlinSuite {
             GroupTest.class,
             GroupCountTest.class,
             InjectTest.class,
-            ProfileTest.class,
             SackTest.class,
             SideEffectCapTest.class,
             SideEffectTest.class,

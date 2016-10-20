@@ -18,7 +18,6 @@
  */
 package org.apache.tinkerpop.gremlin.structure.io.graphson;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Element;
@@ -27,10 +26,17 @@ import org.apache.tinkerpop.gremlin.structure.Property;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.structure.io.GraphWriter;
+import org.apache.tinkerpop.gremlin.structure.io.Mapper;
+import org.apache.tinkerpop.gremlin.structure.util.star.DirectionalStarGraph;
 import org.apache.tinkerpop.gremlin.structure.util.star.StarGraph;
-import org.apache.tinkerpop.gremlin.structure.util.star.StarGraphGraphSONSerializer;
+import org.apache.tinkerpop.shaded.jackson.databind.ObjectMapper;
 
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.util.Iterator;
 import java.util.function.Function;
 
@@ -73,7 +79,7 @@ public final class GraphSONWriter implements GraphWriter {
      */
     @Override
     public void writeVertex(final OutputStream outputStream, final Vertex v, final Direction direction) throws IOException {
-        mapper.writeValue(outputStream, new StarGraphGraphSONSerializer.DirectionalStarGraph(StarGraph.of(v), direction));
+        mapper.writeValue(outputStream, new DirectionalStarGraph(StarGraph.of(v), direction));
     }
 
     /**
@@ -99,7 +105,7 @@ public final class GraphSONWriter implements GraphWriter {
     public void writeVertices(final OutputStream outputStream, final Iterator<Vertex> vertexIterator, final Direction direction) throws IOException {
         final BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream));
         try (final ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            if (wrapAdjacencyList) writer.write("{\"vertices\":[");
+            if (wrapAdjacencyList) writer.write("{\"" + GraphSONTokens.VERTICES + "\":[");
             while (vertexIterator.hasNext()) {
                 writeVertex(baos, vertexIterator.next(), direction);
                 writer.write(new String(baos.toByteArray()));
@@ -184,7 +190,7 @@ public final class GraphSONWriter implements GraphWriter {
 
     public static class Builder implements WriterBuilder<GraphSONWriter> {
 
-        private GraphSONMapper mapper = GraphSONMapper.build().create();
+        private Mapper<ObjectMapper> mapper = GraphSONMapper.build().create();
         private boolean wrapAdjacencyList = false;
 
         private Builder() { }
@@ -193,7 +199,7 @@ public final class GraphSONWriter implements GraphWriter {
          * Override all of the builder options with this mapper.  If this value is set to something other than
          * null then that value will be used to construct the writer.
          */
-        public Builder mapper(final GraphSONMapper mapper) {
+        public Builder mapper(final Mapper<ObjectMapper> mapper) {
             this.mapper = mapper;
             return this;
         }

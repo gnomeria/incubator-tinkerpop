@@ -21,11 +21,11 @@ package org.apache.tinkerpop.gremlin.tinkergraph;
 import org.apache.commons.configuration.Configuration;
 import org.apache.tinkerpop.gremlin.AbstractGraphProvider;
 import org.apache.tinkerpop.gremlin.LoadGraphWith;
+import org.apache.tinkerpop.gremlin.TestHelper;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.GraphTest;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.structure.io.IoEdgeTest;
-import org.apache.tinkerpop.gremlin.structure.io.IoTest;
 import org.apache.tinkerpop.gremlin.structure.io.IoVertexTest;
 import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedGraphTest;
 import org.apache.tinkerpop.gremlin.structure.util.star.StarGraphTest;
@@ -37,6 +37,7 @@ import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerProperty;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerVertex;
 import org.apache.tinkerpop.gremlin.tinkergraph.structure.TinkerVertexProperty;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -64,11 +65,17 @@ public class TinkerGraphProvider extends AbstractGraphProvider {
         final String idMaker = (idManager.equals(TinkerGraph.DefaultIdManager.ANY) ? selectIdMakerFromTest(test, testMethodName) : idManager).name();
         return new HashMap<String, Object>() {{
             put(Graph.GRAPH, TinkerGraph.class.getName());
-            put(TinkerGraph.CONFIG_VERTEX_ID, idMaker);
-            put(TinkerGraph.CONFIG_EDGE_ID, idMaker);
-            put(TinkerGraph.CONFIG_VERTEX_PROPERTY_ID, idMaker);
+            put(TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_ID_MANAGER, idMaker);
+            put(TinkerGraph.GREMLIN_TINKERGRAPH_EDGE_ID_MANAGER, idMaker);
+            put(TinkerGraph.GREMLIN_TINKERGRAPH_VERTEX_PROPERTY_ID_MANAGER, idMaker);
             if (requiresListCardinalityAsDefault(loadGraphWith, test, testMethodName))
-                put(TinkerGraph.CONFIG_DEFAULT_VERTEX_PROPERTY_CARDINALITY, VertexProperty.Cardinality.list.name());
+                put(TinkerGraph.GREMLIN_TINKERGRAPH_DEFAULT_VERTEX_PROPERTY_CARDINALITY, VertexProperty.Cardinality.list.name());
+            if (requiresPersistence(test, testMethodName)) {
+                put(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_FORMAT, "gryo");
+                final File tempDir = TestHelper.makeTestDataPath(test, "temp");
+                put(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION,
+                        tempDir.getAbsolutePath() + File.separator + testMethodName + ".kryo");
+            }
         }};
     }
 
@@ -76,6 +83,13 @@ public class TinkerGraphProvider extends AbstractGraphProvider {
     public void clear(final Graph graph, final Configuration configuration) throws Exception {
         if (graph != null)
             graph.close();
+
+        // in the even the graph is persisted we need to clean up
+        final String graphLocation = configuration.getString(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION, null);
+        if (graphLocation != null) {
+            final File f = new File(graphLocation);
+            f.delete();
+        }
     }
 
     @Override
@@ -84,9 +98,16 @@ public class TinkerGraphProvider extends AbstractGraphProvider {
     }
 
     /**
+     * Determines if a test requires TinkerGraph persistence to be configured with graph location and format.
+     */
+    protected static boolean requiresPersistence(final Class<?> test, final String testMethodName) {
+        return test == GraphTest.class && testMethodName.equals("shouldPersistDataOnClose");
+    }
+
+    /**
      * Determines if a test requires a different cardinality as the default or not.
      */
-    private static boolean requiresListCardinalityAsDefault(final LoadGraphWith.GraphData loadGraphWith,
+    protected static boolean requiresListCardinalityAsDefault(final LoadGraphWith.GraphData loadGraphWith,
                                                             final Class<?> test, final String testMethodName) {
         return loadGraphWith == LoadGraphWith.GraphData.CREW
                 || (test == StarGraphTest.class && testMethodName.equals("shouldAttachWithCreateMethod"))
@@ -96,7 +117,7 @@ public class TinkerGraphProvider extends AbstractGraphProvider {
     /**
      * Some tests require special configuration for TinkerGraph to properly configure the id manager.
      */
-    private TinkerGraph.DefaultIdManager selectIdMakerFromTest(final Class<?> test, final String testMethodName) {
+    protected TinkerGraph.DefaultIdManager selectIdMakerFromTest(final Class<?> test, final String testMethodName) {
         if (test.equals(GraphTest.class)) {
             final Set<String> testsThatNeedLongIdManager = new HashSet<String>(){{
                 add("shouldIterateVerticesWithNumericIdSupportUsingDoubleRepresentation");
@@ -130,22 +151,32 @@ public class TinkerGraphProvider extends AbstractGraphProvider {
                 return TinkerGraph.DefaultIdManager.UUID;
         }  else if (test.equals(IoEdgeTest.class)) {
             final Set<String> testsThatNeedLongIdManager = new HashSet<String>(){{
-                add("shouldReadWriteEdge[graphson]");
-                add("shouldReadWriteDetachedEdgeAsReference[graphson]");
-                add("shouldReadWriteDetachedEdge[graphson]");
+                add("shouldReadWriteEdge[graphson-v1]");
+                add("shouldReadWriteDetachedEdgeAsReference[graphson-v1]");
+                add("shouldReadWriteDetachedEdge[graphson-v1]");
+                add("shouldReadWriteEdge[graphson-v2]");
+                add("shouldReadWriteDetachedEdgeAsReference[graphson-v2]");
+                add("shouldReadWriteDetachedEdge[graphson-v2]");
             }};
 
             if (testsThatNeedLongIdManager.contains(testMethodName))
                 return TinkerGraph.DefaultIdManager.LONG;
         } else if (test.equals(IoVertexTest.class)) {
             final Set<String> testsThatNeedLongIdManager = new HashSet<String>(){{
-                add("shouldReadWriteVertexWithBOTHEdges[graphson]");
-                add("shouldReadWriteVertexWithINEdges[graphson]");
-                add("shouldReadWriteVertexWithOUTEdges[graphson]");
-                add("shouldReadWriteVertexNoEdges[graphson]");
-                add("shouldReadWriteDetachedVertexNoEdges[graphson]");
-                add("shouldReadWriteDetachedVertexAsReferenceNoEdges[graphson]");
-                add("shouldReadWriteVertexMultiPropsNoEdges[graphson]");
+                add("shouldReadWriteVertexWithBOTHEdges[graphson-v1]");
+                add("shouldReadWriteVertexWithINEdges[graphson-v1]");
+                add("shouldReadWriteVertexWithOUTEdges[graphson-v1]");
+                add("shouldReadWriteVertexNoEdges[graphson-v1]");
+                add("shouldReadWriteDetachedVertexNoEdges[graphson-v1]");
+                add("shouldReadWriteDetachedVertexAsReferenceNoEdges[graphson-v1]");
+                add("shouldReadWriteVertexMultiPropsNoEdges[graphson-v1]");
+                add("shouldReadWriteVertexWithBOTHEdges[graphson-v2]");
+                add("shouldReadWriteVertexWithINEdges[graphson-v2]");
+                add("shouldReadWriteVertexWithOUTEdges[graphson-v2]");
+                add("shouldReadWriteVertexNoEdges[graphson-v2]");
+                add("shouldReadWriteDetachedVertexNoEdges[graphson-v2]");
+                add("shouldReadWriteDetachedVertexAsReferenceNoEdges[graphson-v2]");
+                add("shouldReadWriteVertexMultiPropsNoEdges[graphson-v2]");
             }};
 
             if (testsThatNeedLongIdManager.contains(testMethodName))
@@ -159,7 +190,7 @@ public class TinkerGraphProvider extends AbstractGraphProvider {
      * Test that load with specific graph data can be configured with a specific id manager as the data type to
      * be used in the test for that graph is known.
      */
-    private TinkerGraph.DefaultIdManager selectIdMakerFromGraphData(final LoadGraphWith.GraphData loadGraphWith) {
+    protected TinkerGraph.DefaultIdManager selectIdMakerFromGraphData(final LoadGraphWith.GraphData loadGraphWith) {
         if (null == loadGraphWith) return TinkerGraph.DefaultIdManager.ANY;
         if (loadGraphWith.equals(LoadGraphWith.GraphData.CLASSIC))
             return TinkerGraph.DefaultIdManager.INTEGER;

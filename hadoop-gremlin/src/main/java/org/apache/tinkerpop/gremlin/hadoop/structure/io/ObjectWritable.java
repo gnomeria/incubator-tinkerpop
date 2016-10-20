@@ -21,9 +21,9 @@ package org.apache.tinkerpop.gremlin.hadoop.structure.io;
 import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.io.WritableUtils;
 import org.apache.tinkerpop.gremlin.process.computer.MapReduce;
+import org.apache.tinkerpop.gremlin.structure.io.gryo.kryoshim.KryoShimServiceLoader;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -36,6 +36,7 @@ import java.io.Serializable;
  */
 public final class ObjectWritable<T> implements WritableComparable<ObjectWritable>, Serializable {
 
+    private static final String NULL = "null";
     private static final ObjectWritable<MapReduce.NullObject> NULL_OBJECT_WRITABLE = new ObjectWritable<>(MapReduce.NullObject.instance());
 
     T t;
@@ -57,34 +58,19 @@ public final class ObjectWritable<T> implements WritableComparable<ObjectWritabl
 
     @Override
     public String toString() {
-        return this.t.toString();
+        return null == this.t ? NULL : this.t.toString();
     }
 
     @Override
     public void readFields(final DataInput input) throws IOException {
-        this.t = HadoopPools.getGryoPool().doWithReader(gryoReader -> {
-            try {
-                // class argument is Object because gryo doesn't really care that we don't know the specific type.
-                // the type is embedded in the stream so it can just read it from there and return it as needed.
-                // presumably that will cast nicely to T
-                return (T) gryoReader.readObject(new ByteArrayInputStream(WritableUtils.readCompressedByteArray(input)), Object.class);
-            } catch (IOException e) {
-                throw new IllegalStateException(e.getMessage(), e);
-            }
-        });
+        final ByteArrayInputStream bais = new ByteArrayInputStream(WritableUtils.readCompressedByteArray(input));
+        this.t = KryoShimServiceLoader.readClassAndObject(bais);
     }
 
     @Override
     public void write(final DataOutput output) throws IOException {
-        HadoopPools.getGryoPool().doWithWriter(gryoWriter -> {
-            try {
-                final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-                gryoWriter.writeObject(outputStream, this.t);
-                WritableUtils.writeCompressedByteArray(output, outputStream.toByteArray());
-            } catch (IOException e) {
-                throw new IllegalStateException(e.getMessage(), e);
-            }
-        });
+        final byte serialized[] = KryoShimServiceLoader.writeClassAndObjectToBytes(this.t);
+        WritableUtils.writeCompressedByteArray(output, serialized);
     }
 
     private void writeObject(final ObjectOutputStream outputStream) throws IOException {
@@ -97,15 +83,22 @@ public final class ObjectWritable<T> implements WritableComparable<ObjectWritabl
 
     @Override
     public int compareTo(final ObjectWritable objectWritable) {
-        return this.t instanceof Comparable ? ((Comparable) this.t).compareTo(objectWritable.get()) : 0;
+        if (null == this.t)
+            return objectWritable.isEmpty() ? 0 : -1;
+        else if (this.t instanceof Comparable && !objectWritable.isEmpty())
+            return ((Comparable) this.t).compareTo(objectWritable.get());
+        else if (this.t.equals(objectWritable.get()))
+            return 0;
+        else
+            return -1;
     }
 
     public boolean isEmpty() {
         return null == this.t;
     }
 
-    public static ObjectWritable empty() {
-        return new ObjectWritable(null);
+    public static <A> ObjectWritable<A> empty() {
+        return new ObjectWritable<>(null);
     }
 
     @Override
@@ -120,7 +113,7 @@ public final class ObjectWritable<T> implements WritableComparable<ObjectWritabl
 
     @Override
     public int hashCode() {
-        return this.isEmpty() ? 0 : this.t.hashCode();
+        return null == this.t ? 0 : this.t.hashCode();
     }
 
     public static ObjectWritable<MapReduce.NullObject> getNullObjectWritable() {

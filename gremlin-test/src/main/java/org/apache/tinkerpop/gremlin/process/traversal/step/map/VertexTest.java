@@ -18,13 +18,17 @@
  */
 package org.apache.tinkerpop.gremlin.process.traversal.step.map;
 
+import org.apache.tinkerpop.gremlin.FeatureRequirement;
 import org.apache.tinkerpop.gremlin.LoadGraphWith;
 import org.apache.tinkerpop.gremlin.process.AbstractGremlinProcessTest;
 import org.apache.tinkerpop.gremlin.process.GremlinProcessRunner;
+import org.apache.tinkerpop.gremlin.process.IgnoreEngine;
 import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
+import org.apache.tinkerpop.gremlin.process.traversal.TraversalEngine;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -37,19 +41,21 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.apache.tinkerpop.gremlin.LoadGraphWith.GraphData.MODERN;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
- * @author Stephen Mallette (http://traversalhen.genoprime.com)
+ * @author Stephen Mallette (http://stephen.genoprime.com)
  * @author Daniel Kuppitz (http://gremlin.guru)
  */
 @RunWith(GremlinProcessRunner.class)
 public abstract class VertexTest extends AbstractGremlinProcessTest {
 
-    public abstract Traversal<Vertex, String> get_g_VXlistXv1_v2_v3XX_name();
+    public abstract Traversal<Vertex, String> get_g_VXlistXv1_v2_v3XX_name(final Vertex v1, final Vertex v2, final Vertex v3);
 
-    public abstract Traversal<Vertex, String> get_g_VXlistX1_2_3XX_name();
+    public abstract Traversal<Vertex, String> get_g_VXlistX1_2_3XX_name(final Object v1Id, final Object v2Id, final Object v3Id);
 
     public abstract Traversal<Vertex, Vertex> get_g_V();
 
@@ -103,15 +109,26 @@ public abstract class VertexTest extends AbstractGremlinProcessTest {
 
     public abstract Traversal<Vertex, Vertex> get_g_VX1X_to_XOUT_knowsX(final Object v1Id);
 
+    public abstract Traversal<Vertex, String> get_g_VX1_2_3_4X_name(final Object v1Id, final Object v2Id, final Object v3Id, final Object v4Id);
+
+    public abstract Traversal<Vertex, String> get_g_V_hasLabelXpersonX_V_hasLabelXsoftwareX_name();
+
     // GRAPH VERTEX/EDGE
 
     @Test
     @LoadGraphWith(MODERN)
     public void g_VXlistX1_2_3XX_name() {
-        Arrays.asList(get_g_VXlistX1_2_3XX_name(), get_g_VXlistXv1_v2_v3XX_name()).forEach(traversal -> {
-            printTraversalForm(traversal);
-            checkResults(Arrays.asList("marko", "vadas", "lop"), traversal);
-        });
+        final Traversal<Vertex, String> traversal = get_g_VXlistX1_2_3XX_name(convertToVertexId(graph, "marko"), convertToVertexId(graph, "vadas"), convertToVertexId(graph, "lop"));
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList("marko", "vadas", "lop"), traversal);
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_VXlistXv1_v2_v3XX_name() {
+        final Traversal<Vertex, String> traversal = get_g_VXlistXv1_v2_v3XX_name(convertToVertex(graph, "marko"), convertToVertex(graph, "vadas"), convertToVertex(graph, "lop"));
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList("marko", "vadas", "lop"), traversal);
     }
 
     // VERTEX ADJACENCY
@@ -532,16 +549,37 @@ public abstract class VertexTest extends AbstractGremlinProcessTest {
         assertFalse(traversal.hasNext());
     }
 
+    @Test
+    @LoadGraphWith
+    @FeatureRequirement(featureClass = Graph.Features.VertexFeatures.class, feature = Graph.Features.VertexFeatures.FEATURE_REMOVE_VERTICES)
+    @IgnoreEngine(TraversalEngine.Type.COMPUTER)
+    public void g_VX1_2_3_4X_name() {
+        final Object vLop = convertToVertexId("lop");
+        g.V(vLop).drop().iterate();
+        final Traversal<Vertex, String> traversal = get_g_VX1_2_3_4X_name(convertToVertexId("marko"), convertToVertexId("vadas"), vLop, convertToVertexId("josh"));
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList("marko", "vadas", "josh"), traversal);
+        assertFalse(traversal.hasNext());
+    }
+
+    @Test
+    @LoadGraphWith(MODERN)
+    public void g_V_hasLabelXpersonX_V_hasLabelXsoftwareX_name() {
+        final Traversal<Vertex, String> traversal = get_g_V_hasLabelXpersonX_V_hasLabelXsoftwareX_name();
+        printTraversalForm(traversal);
+        checkResults(Arrays.asList("lop", "lop", "lop", "lop", "ripple", "ripple", "ripple", "ripple"), traversal);
+    }
+
     public static class Traversals extends VertexTest {
 
         @Override
-        public Traversal<Vertex, String> get_g_VXlistXv1_v2_v3XX_name() {
-            return g.V(Arrays.asList(convertToVertex(graph, "marko"), convertToVertex(graph, "vadas"), convertToVertex(graph, "lop"))).values("name");
+        public Traversal<Vertex, String> get_g_VXlistXv1_v2_v3XX_name(final Vertex v1, final Vertex v2, final Vertex v3) {
+            return g.V(Arrays.asList(v1, v2, v3)).values("name");
         }
 
         @Override
-        public Traversal<Vertex, String> get_g_VXlistX1_2_3XX_name() {
-            return g.V(Arrays.asList(convertToVertexId(graph, "marko"), convertToVertexId(graph, "vadas"), convertToVertexId(graph, "lop"))).values("name");
+        public Traversal<Vertex, String> get_g_VXlistX1_2_3XX_name(final Object v1Id, final Object v2Id, final Object v3Id) {
+            return g.V(Arrays.asList(v1Id, v2Id, v3Id)).values("name");
         }
 
         @Override
@@ -670,8 +708,18 @@ public abstract class VertexTest extends AbstractGremlinProcessTest {
         }
 
         @Override
+        public Traversal<Vertex, String> get_g_VX1_2_3_4X_name(final Object v1Id, final Object v2Id, final Object v3Id, final Object v4Id) {
+            return g.V(v1Id, v2Id, v3Id, v4Id).values("name");
+        }
+
+        @Override
         public Traversal<Edge, Edge> get_g_EX11X(final Object e11Id) {
             return g.E(e11Id);
+        }
+
+        @Override
+        public Traversal<Vertex, String> get_g_V_hasLabelXpersonX_V_hasLabelXsoftwareX_name() {
+            return g.V().hasLabel("person").V().hasLabel("software").values("name");
         }
     }
 }

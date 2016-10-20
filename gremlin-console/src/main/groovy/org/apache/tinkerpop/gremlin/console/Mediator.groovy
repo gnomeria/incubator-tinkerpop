@@ -30,14 +30,11 @@ class Mediator {
     public final Map<String, PluggedIn> availablePlugins = [:]
     public final List<RemoteAcceptor> remotes = []
     public int position
+    public boolean localEvaluation = true
 
     private final Console console
 
-    private static String FILE_SEP = System.getProperty("file.separator")
     private static String LINE_SEP = System.getProperty("line.separator")
-
-    private static final String PLUGIN_CONFIG_FILE =
-        System.getProperty("tinkerpop.ext", System.getProperty("user.dir", ".") + FILE_SEP + "ext") + FILE_SEP + "plugins.txt"
 
     public Mediator(final Console console) {
         this.console = console
@@ -73,10 +70,8 @@ class Mediator {
         console.showShellEvaluationOutput(show)
     }
 
-    def submit(final List<String> args) throws Exception { return currentRemote().submit(args) }
-
     def writePluginState() {
-        def file = new File(PLUGIN_CONFIG_FILE)
+        def file = new File(ConsoleFs.PLUGIN_CONFIG_FILE)
 
         // ensure that the directories exist to hold the file.
         file.mkdirs()
@@ -84,7 +79,7 @@ class Mediator {
         if (file.exists())
             file.delete()
 
-        new File(PLUGIN_CONFIG_FILE).withWriter { out ->
+        new File(ConsoleFs.PLUGIN_CONFIG_FILE).withWriter { out ->
             activePlugins().each { k, v -> out << (k + LINE_SEP) }
         }
     }
@@ -94,11 +89,11 @@ class Mediator {
     }
 
     static def readPluginState() {
-        def file = new File(PLUGIN_CONFIG_FILE)
+        def file = new File(ConsoleFs.PLUGIN_CONFIG_FILE)
         return file.exists() ? file.readLines() : []
     }
 
-    def CompletableFuture<Void> close() {
+    def void close() {
         remotes.each { remote ->
             try {
                 remote.close()
@@ -106,8 +101,6 @@ class Mediator {
 
             }
         }
-
-        return CompletableFuture.completedFuture(null)
     }
 
 }

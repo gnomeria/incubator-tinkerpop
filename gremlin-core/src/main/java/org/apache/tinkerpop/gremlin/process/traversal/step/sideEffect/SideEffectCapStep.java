@@ -19,11 +19,20 @@
 package org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect;
 
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
+import org.apache.tinkerpop.gremlin.process.traversal.TraversalSideEffects;
+import org.apache.tinkerpop.gremlin.process.traversal.step.SideEffectCapable;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.SupplyingBarrierStep;
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.TraverserRequirement;
+import org.apache.tinkerpop.gremlin.process.traversal.util.EmptyTraversal;
+import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalHelper;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
@@ -31,6 +40,7 @@ import java.util.*;
 public final class SideEffectCapStep<S, E> extends SupplyingBarrierStep<S, E> {
 
     private List<String> sideEffectKeys;
+    public transient Map<String, SideEffectCapable<Object, E>> sideEffectCapableSteps;
 
     public SideEffectCapStep(final Traversal.Admin traversal, final String sideEffectKey, final String... sideEffectKeys) {
         super(traversal);
@@ -66,16 +76,50 @@ public final class SideEffectCapStep<S, E> extends SupplyingBarrierStep<S, E> {
 
     @Override
     protected E supply() {
-        return this.sideEffectKeys.size() == 1 ?
-                this.getTraversal().asAdmin().getSideEffects().<E>get(this.sideEffectKeys.get(0)).get() :
-                (E) this.getMapOfSideEffects();
+        if (null == this.sideEffectCapableSteps) {
+            this.sideEffectCapableSteps = new HashMap<>();
+            Traversal.Admin<?, ?> parentTraversal = this.getTraversal();
+            while (!(parentTraversal instanceof EmptyTraversal)) {
+                for (final SideEffectCapable<Object, E> capableStep : TraversalHelper.getStepsOfAssignableClassRecursively(SideEffectCapable.class, parentTraversal)) {
+                    if (this.sideEffectKeys.contains(capableStep.getSideEffectKey()) && !this.sideEffectCapableSteps.containsKey(capableStep.getSideEffectKey()))
+                        this.sideEffectCapableSteps.put(capableStep.getSideEffectKey(), capableStep);
+                }
+                if (this.sideEffectKeys.size() == this.sideEffectCapableSteps.size())
+                    break;
+                parentTraversal = parentTraversal.getParent().asStep().getTraversal();
+            }
+        }
+        ////////////
+        if (this.sideEffectKeys.size() == 1) {
+            final String sideEffectKey = this.sideEffectKeys.get(0);
+            final E result = this.getTraversal().getSideEffects().<E>get(sideEffectKey);
+            final SideEffectCapable<Object, E> sideEffectCapable = this.sideEffectCapableSteps.get(sideEffectKey);
+            final E finalResult = null == sideEffectCapable ? result : sideEffectCapable.generateFinalResult(result);
+            this.getTraversal().getSideEffects().set(sideEffectKey, finalResult);
+            return finalResult;
+        } else
+            return (E) this.getMapOfSideEffects();
     }
 
-    public Map<String, Object> getMapOfSideEffects() {
+    private Map<String, Object> getMapOfSideEffects() {
+        final TraversalSideEffects temp = this.getTraversal().getSideEffects();
         final Map<String, Object> sideEffects = new HashMap<>();
         for (final String sideEffectKey : this.sideEffectKeys) {
-            this.getTraversal().asAdmin().getSideEffects().get(sideEffectKey).ifPresent(value -> sideEffects.put(sideEffectKey, value));
+            if (temp.exists(sideEffectKey)) {
+                final E result = temp.get(sideEffectKey);
+                final SideEffectCapable<Object, E> sideEffectCapable = this.sideEffectCapableSteps.get(sideEffectKey);
+                final E finalResult = null == sideEffectCapable ? result : sideEffectCapable.generateFinalResult(result);
+                temp.set(sideEffectKey, finalResult);
+                sideEffects.put(sideEffectKey, finalResult);
+            }
         }
         return sideEffects;
+    }
+
+    @Override
+    public SideEffectCapStep<S, E> clone() {
+        final SideEffectCapStep<S, E> clone = (SideEffectCapStep<S, E>) super.clone();
+        clone.sideEffectCapableSteps = null;
+        return clone;
     }
 }

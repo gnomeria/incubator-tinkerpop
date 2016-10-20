@@ -33,7 +33,7 @@ import java.util.Optional;
  * The map() stage processes the vertices of the {@link org.apache.tinkerpop.gremlin.structure.Graph} in a logically parallel manner.
  * The combine() stage aggregates the values of a particular map emitted key prior to sending across the cluster.
  * The reduce() stage aggregates the values of the combine/map emitted keys for the keys that hash to the current machine in the cluster.
- * The interface presented here is nearly identical to the interface popularized by Hadoop save the the map() is over the vertices of the graph.
+ * The interface presented here is nearly identical to the interface popularized by Hadoop save the map() is over the vertices of the graph.
  *
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  */
@@ -87,12 +87,12 @@ public interface MapReduce<MK, MV, RK, RV, R> extends Cloneable {
     /**
      * The map() method is logically executed at all vertices in the graph in parallel.
      * The map() method emits key/value pairs given some analysis of the data in the vertices (and/or its incident edges).
+     * All {@link MapReduce} classes must at least provide an implementation of {@code MapReduce#map(Vertex, MapEmitter)}.
      *
      * @param vertex  the current vertex being map() processed.
      * @param emitter the component that allows for key/value pairs to be emitted to the next stage.
      */
-    public default void map(final Vertex vertex, final MapEmitter<MK, MV> emitter) {
-    }
+    public void map(final Vertex vertex, final MapEmitter<MK, MV> emitter);
 
     /**
      * The combine() method is logically executed at all "machines" in parallel.
@@ -271,7 +271,7 @@ public interface MapReduce<MK, MV, RK, RV, R> extends Cloneable {
     /**
      * A convenience singleton when a single key is needed so that all emitted values converge to the same combiner/reducer.
      */
-    public static class NullObject implements Comparable, Serializable {
+    public static class NullObject implements Comparable<NullObject>, Serializable {
         private static final NullObject INSTANCE = new NullObject();
         private static final String NULL_OBJECT = "";
 
@@ -281,20 +281,17 @@ public interface MapReduce<MK, MV, RK, RV, R> extends Cloneable {
 
         @Override
         public int hashCode() {
-            return 0;
+            return -9832049;
         }
 
         @Override
         public boolean equals(final Object object) {
-            return object instanceof NullObject;
+            return this == object || object instanceof NullObject;
         }
 
         @Override
-        public int compareTo(final Object object) {
-            if (object instanceof NullObject)
-                return 0;
-            else
-                throw new IllegalArgumentException("The " + NullObject.class.getSimpleName() + " can not be compared with " + object.getClass().getSimpleName());
+        public int compareTo(final NullObject object) {
+            return 0;
         }
 
         @Override

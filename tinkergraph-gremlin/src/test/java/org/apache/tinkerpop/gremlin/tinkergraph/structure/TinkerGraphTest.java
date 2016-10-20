@@ -18,189 +18,64 @@
  */
 package org.apache.tinkerpop.gremlin.tinkergraph.structure;
 
-import org.apache.tinkerpop.gremlin.process.traversal.Operator;
+import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.configuration.Configuration;
+import org.apache.tinkerpop.gremlin.TestHelper;
 import org.apache.tinkerpop.gremlin.process.traversal.P;
-import org.apache.tinkerpop.gremlin.process.traversal.SackFunctions;
-import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.VertexProperty;
+import org.apache.tinkerpop.gremlin.structure.io.Io;
+import org.apache.tinkerpop.gremlin.structure.io.GraphReader;
+import org.apache.tinkerpop.gremlin.structure.io.GraphWriter;
 import org.apache.tinkerpop.gremlin.structure.io.IoCore;
+import org.apache.tinkerpop.gremlin.structure.io.IoRegistry;
 import org.apache.tinkerpop.gremlin.structure.io.IoTest;
-import org.apache.tinkerpop.gremlin.structure.io.graphml.GraphMLIo;
-import org.apache.tinkerpop.gremlin.util.TimeUtil;
-import org.junit.Ignore;
+import org.apache.tinkerpop.gremlin.structure.io.Mapper;
+import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONReader;
+import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONWriter;
+import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoClassResolver;
+import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoMapper;
+import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoWriter;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
+import org.apache.tinkerpop.shaded.jackson.databind.ObjectMapper;
+import org.apache.tinkerpop.shaded.kryo.ClassResolver;
+import org.apache.tinkerpop.shaded.kryo.Kryo;
+import org.apache.tinkerpop.shaded.kryo.Registration;
+import org.apache.tinkerpop.shaded.kryo.Serializer;
+import org.apache.tinkerpop.shaded.kryo.io.Input;
+import org.apache.tinkerpop.shaded.kryo.io.Output;
 import org.junit.Test;
 
+import java.awt.Color;
+import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
 
 /**
  * @author Marko A. Rodriguez (http://markorodriguez.com)
  * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public class TinkerGraphTest {
-
-    @Test
-    @Ignore
-    public void testPlay() {
-        Graph g = TinkerGraph.open();
-        Vertex v1 = g.addVertex(T.id, "1", "animal", "males");
-        Vertex v2 = g.addVertex(T.id, "2", "animal", "puppy");
-        Vertex v3 = g.addVertex(T.id, "3", "animal", "mama");
-        Vertex v4 = g.addVertex(T.id, "4", "animal", "puppy");
-        Vertex v5 = g.addVertex(T.id, "5", "animal", "chelsea");
-        Vertex v6 = g.addVertex(T.id, "6", "animal", "low");
-        Vertex v7 = g.addVertex(T.id, "7", "animal", "mama");
-        Vertex v8 = g.addVertex(T.id, "8", "animal", "puppy");
-        Vertex v9 = g.addVertex(T.id, "9", "animal", "chula");
-
-        v1.addEdge("link", v2, "weight", 2f);
-        v2.addEdge("link", v3, "weight", 3f);
-        v2.addEdge("link", v4, "weight", 4f);
-        v2.addEdge("link", v5, "weight", 5f);
-        v3.addEdge("link", v6, "weight", 1f);
-        v4.addEdge("link", v6, "weight", 2f);
-        v5.addEdge("link", v6, "weight", 3f);
-        v6.addEdge("link", v7, "weight", 2f);
-        v6.addEdge("link", v8, "weight", 3f);
-        v7.addEdge("link", v9, "weight", 1f);
-        v8.addEdge("link", v9, "weight", 7f);
-
-        g.traversal().withSack(Float.MIN_VALUE).V(v1).repeat(outE().sack(Operator.max, "weight").inV()).times(5).sack().forEachRemaining(System.out::println);
-    }
-
-   /* @Test
-    public void testTraversalDSL() throws Exception {
-        Graph g = TinkerFactory.createClassic();
-        assertEquals(2, g.of(TinkerFactory.SocialTraversal.class).people("marko").knows().name().toList().size());
-        g.of(TinkerFactory.SocialTraversal.class).people("marko").knows().name().forEachRemaining(name -> assertTrue(name.equals("josh") || name.equals("vadas")));
-        assertEquals(1, g.of(TinkerFactory.SocialTraversal.class).people("marko").created().name().toList().size());
-        g.of(TinkerFactory.SocialTraversal.class).people("marko").created().name().forEachRemaining(name -> assertEquals("lop", name));
-    }*/
-
-    @Test
-    @Ignore
-    public void benchmarkStandardTraversals() throws Exception {
-        Graph graph = TinkerGraph.open();
-        GraphTraversalSource g = graph.traversal();
-        graph.io(GraphMLIo.build()).readGraph("data/grateful-dead.xml");
-        final List<Supplier<Traversal>> traversals = Arrays.asList(
-                () -> g.V().outE().inV().outE().inV().outE().inV(),
-                () -> g.V().out().out().out(),
-                () -> g.V().out().out().out().path(),
-                () -> g.V().repeat(out()).times(2),
-                () -> g.V().repeat(out()).times(3),
-                () -> g.V().local(out().out().values("name").fold()),
-                () -> g.V().out().local(out().out().values("name").fold()),
-                () -> g.V().out().map(v -> g.V(v.get()).out().out().values("name").toList())
-        );
-        traversals.forEach(traversal -> {
-            System.out.println("\nTESTING: " + traversal.get());
-            for (int i = 0; i < 7; i++) {
-                final long t = System.currentTimeMillis();
-                traversal.get().iterate();
-                System.out.print("   " + (System.currentTimeMillis() - t));
-            }
-        });
-    }
-
-    @Test
-    @Ignore
-    public void testPlay4() throws Exception {
-        Graph graph = TinkerGraph.open();
-        graph.io(GraphMLIo.build()).readGraph("/Users/marko/software/tinkerpop/tinkerpop3/data/grateful-dead.xml");
-        GraphTraversalSource g = graph.traversal();
-        final List<Supplier<Traversal>> traversals = Arrays.asList(
-                () -> g.V().has(T.label, "song").out().groupCount().<Vertex>by(t ->
-                        g.V(t).choose(r -> g.V(r).has(T.label, "artist").hasNext(),
-                                in("writtenBy", "sungBy"),
-                                both("followedBy")).values("name").next()).fold(),
-                () -> g.V().has(T.label, "song").out().groupCount().<Vertex>by(t ->
-                        g.V(t).choose(has(T.label, "artist"),
-                                in("writtenBy", "sungBy"),
-                                both("followedBy")).values("name").next()).fold(),
-                () -> g.V().has(T.label, "song").out().groupCount().by(
-                        choose(has(T.label, "artist"),
-                                in("writtenBy", "sungBy"),
-                                both("followedBy")).values("name")).fold(),
-                () -> g.V().has(T.label, "song").both().groupCount().<Vertex>by(t -> g.V(t).both().values("name").next()),
-                () -> g.V().has(T.label, "song").both().groupCount().by(both().values("name")));
-        traversals.forEach(traversal -> {
-            System.out.println("\nTESTING: " + traversal.get());
-            for (int i = 0; i < 10; i++) {
-                final long t = System.currentTimeMillis();
-                traversal.get().iterate();
-                //System.out.println(traversal.get().toList());
-                System.out.print("   " + (System.currentTimeMillis() - t));
-            }
-        });
-    }
-
-    @Test
-    @Ignore
-    public void testPlayDK() throws Exception {
-        final Graph graph = TinkerFactory.createModern();
-        final GraphTraversalSource g = graph.traversal();
-        Traversal traversal = g.V().dedup().filter(__.out()).has("age", P.gt(0));
-        System.out.println(traversal.toString());
-        //traversal.asAdmin().applyStrategies();
-        System.out.println(traversal.iterate().toString());
-    }
-
-    @Test
-    @Ignore
-    public void testPlay7() throws Exception {
-        final Graph graph = TinkerFactory.createModern();
-        final GraphTraversalSource g = graph.traversal();
-        g.withSack(1.0, Operator.sum).V(1).local(outE("knows").barrier(SackFunctions.Barrier.normSack)).inV().in("knows").barrier().sack().forEachRemaining(System.out::println);
-    }
-
-    @Test
-    @Ignore
-    public void testPlay5() throws Exception {
-        TinkerGraph graph = TinkerGraph.open();
-        graph.createIndex("name", Vertex.class);
-        graph.io(GraphMLIo.build()).readGraph("/Users/marko/software/tinkerpop/tinkerpop3/data/grateful-dead.xml");
-        GraphTraversalSource g = graph.traversal(GraphTraversalSource.computer());
-
-        final Supplier<Traversal<?, ?>> traversal = () ->
-                g.V().repeat(out()).times(5).as("a").out("writtenBy").as("b").select("a", "b").count();
-
-        System.out.println(traversal.get());
-        System.out.println(traversal.get().iterate());
-        System.out.println(TimeUtil.clockWithResult(1, () -> traversal.get().next()));
-    }
-
-    @Test
-    @Ignore
-    public void testPlay6() throws Exception {
-        final Graph graph = TinkerGraph.open();
-        final GraphTraversalSource g = graph.traversal(GraphTraversalSource.standard());
-        for (int i = 0; i < 1000; i++) {
-            graph.addVertex(T.label, "person", T.id, i);
-        }
-        graph.vertices().forEachRemaining(a -> {
-            graph.vertices().forEachRemaining(b -> {
-                if (a != b) {
-                    a.addEdge("knows", b);
-                }
-            });
-        });
-        graph.vertices(50).next().addEdge("uncle", graph.vertices(70).next());
-        System.out.println(TimeUtil.clockWithResult(500, () -> g.V().match(as("a").out("knows").as("b"), as("a").out("uncle").as("b")).toList()));
-    }
 
     @Test
     public void shouldManageIndices() {
@@ -277,7 +152,6 @@ public class TinkerGraphTest {
         g.createIndex("", Edge.class);
     }
 
-    @Ignore
     @Test
     public void shouldUpdateVertexIndicesInNewGraph() {
         final TinkerGraph g = TinkerGraph.open();
@@ -297,7 +171,6 @@ public class TinkerGraphTest {
         }, 35)).has("name", "stephen").count().next());
     }
 
-    @Ignore
     @Test
     public void shouldRemoveAVertexFromAnIndex() {
         final TinkerGraph g = TinkerGraph.open();
@@ -324,7 +197,6 @@ public class TinkerGraphTest {
         }, 35)).has("name", "stephen").count().next());
     }
 
-    @Ignore
     @Test
     public void shouldUpdateVertexIndicesInExistingGraph() {
         final TinkerGraph g = TinkerGraph.open();
@@ -352,7 +224,6 @@ public class TinkerGraphTest {
         }, 35)).has("name", "stephen").count().next());
     }
 
-    @Ignore
     @Test
     public void shouldUpdateEdgeIndicesInNewGraph() {
         final TinkerGraph g = TinkerGraph.open();
@@ -373,7 +244,6 @@ public class TinkerGraphTest {
         }, 0.5)).has("oid", "1").count().next());
     }
 
-    @Ignore
     @Test
     public void shouldRemoveEdgeFromAnIndex() {
         final TinkerGraph g = TinkerGraph.open();
@@ -401,7 +271,6 @@ public class TinkerGraphTest {
         }, 0.5)).has("oid", "1").count().next());
     }
 
-    @Ignore
     @Test
     public void shouldUpdateEdgeIndicesInExistingGraph() {
         final TinkerGraph g = TinkerGraph.open();
@@ -435,10 +304,353 @@ public class TinkerGraphTest {
         final TinkerGraph graph = TinkerFactory.createModern();
         try (final ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             graph.io(IoCore.gryo()).writer().create().writeObject(out, graph);
-            try (final ByteArrayInputStream inputStream = new ByteArrayInputStream(out.toByteArray())) {
+            final byte[] b = out.toByteArray();
+            try (final ByteArrayInputStream inputStream = new ByteArrayInputStream(b)) {
                 final TinkerGraph target = graph.io(IoCore.gryo()).reader().create().readObject(inputStream, TinkerGraph.class);
                 IoTest.assertModernGraph(target, true, false);
             }
+        }
+    }
+
+    @Test
+    public void shouldSerializeTinkerGraphToGraphSON() throws Exception {
+        final TinkerGraph graph = TinkerFactory.createModern();
+        try (final ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            graph.io(IoCore.graphson()).writer().create().writeObject(out, graph);
+            try (final ByteArrayInputStream inputStream = new ByteArrayInputStream(out.toByteArray())) {
+                final TinkerGraph target = graph.io(IoCore.graphson()).reader().create().readObject(inputStream, TinkerGraph.class);
+                IoTest.assertModernGraph(target, true, false);
+            }
+        }
+    }
+
+    @Test
+    public void shouldSerializeTinkerGraphToGraphSONWithTypes() throws Exception {
+        final TinkerGraph graph = TinkerFactory.createModern();
+        final Mapper<ObjectMapper> mapper = graph.io(IoCore.graphson()).mapper().embedTypes(true).create();
+        try (final ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            final GraphWriter writer = GraphSONWriter.build().mapper(mapper).create();
+            writer.writeObject(out, graph);
+            try (final ByteArrayInputStream inputStream = new ByteArrayInputStream(out.toByteArray())) {
+                final GraphReader reader = GraphSONReader.build().mapper(mapper).create();
+                final TinkerGraph target = reader.readObject(inputStream, TinkerGraph.class);
+                IoTest.assertModernGraph(target, true, false);
+            }
+        }
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void shouldRequireGraphLocationIfFormatIsSet() {
+        final Configuration conf = new BaseConfiguration();
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_FORMAT, "graphml");
+        TinkerGraph.open(conf);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void shouldNotModifyAVertexThatWasRemoved() {
+        final TinkerGraph graph = TinkerGraph.open();
+        final Vertex v = graph.addVertex();
+        v.property("name", "stephen");
+
+        assertEquals("stephen", v.value("name"));
+        v.remove();
+
+        v.property("status", 1);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void shouldNotAddEdgeToAVertexThatWasRemoved() {
+        final TinkerGraph graph = TinkerGraph.open();
+        final Vertex v = graph.addVertex();
+        v.property("name", "stephen");
+
+        assertEquals("stephen", v.value("name"));
+        v.remove();
+        v.addEdge("self", v);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void shouldNotReadValueOfPropertyOnVertexThatWasRemoved() {
+        final TinkerGraph graph = TinkerGraph.open();
+        final Vertex v = graph.addVertex();
+        v.property("name", "stephen");
+
+        assertEquals("stephen", v.value("name"));
+        v.remove();
+        v.value("name");
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void shouldRequireGraphFormatIfLocationIsSet() {
+        final Configuration conf = new BaseConfiguration();
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION, TestHelper.makeTestDataDirectory(TinkerGraphTest.class));
+        TinkerGraph.open(conf);
+    }
+
+    @Test
+    public void shouldPersistToGraphML() {
+        final String graphLocation = TestHelper.makeTestDataDirectory(TinkerGraphTest.class) + "shouldPersistToGraphML.xml";
+        final File f = new File(graphLocation);
+        if (f.exists() && f.isFile()) f.delete();
+
+        final Configuration conf = new BaseConfiguration();
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_FORMAT, "graphml");
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION, graphLocation);
+        final TinkerGraph graph = TinkerGraph.open(conf);
+        TinkerFactory.generateModern(graph);
+        graph.close();
+
+        final TinkerGraph reloadedGraph = TinkerGraph.open(conf);
+        IoTest.assertModernGraph(reloadedGraph, true, true);
+        reloadedGraph.close();
+    }
+
+    @Test
+    public void shouldPersistToGraphSON() {
+        final String graphLocation = TestHelper.makeTestDataDirectory(TinkerGraphTest.class) + "shouldPersistToGraphSON.json";
+        final File f = new File(graphLocation);
+        if (f.exists() && f.isFile()) f.delete();
+
+        final Configuration conf = new BaseConfiguration();
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_FORMAT, "graphson");
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION, graphLocation);
+        final TinkerGraph graph = TinkerGraph.open(conf);
+        TinkerFactory.generateModern(graph);
+        graph.close();
+
+        final TinkerGraph reloadedGraph = TinkerGraph.open(conf);
+        IoTest.assertModernGraph(reloadedGraph, true, false);
+        reloadedGraph.close();
+    }
+
+    @Test
+    public void shouldPersistToGryo() {
+        final String graphLocation = TestHelper.makeTestDataDirectory(TinkerGraphTest.class) + "shouldPersistToGryo.kryo";
+        final File f = new File(graphLocation);
+        if (f.exists() && f.isFile()) f.delete();
+
+        final Configuration conf = new BaseConfiguration();
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_FORMAT, "gryo");
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION, graphLocation);
+        final TinkerGraph graph = TinkerGraph.open(conf);
+        TinkerFactory.generateModern(graph);
+        graph.close();
+
+        final TinkerGraph reloadedGraph = TinkerGraph.open(conf);
+        IoTest.assertModernGraph(reloadedGraph, true, false);
+        reloadedGraph.close();
+    }
+
+    @Test
+    public void shouldPersistToGryoAndHandleMultiProperties() {
+        final String graphLocation = TestHelper.makeTestDataDirectory(TinkerGraphTest.class) + "shouldPersistToGryoMulti.kryo";
+        final File f = new File(graphLocation);
+        if (f.exists() && f.isFile()) f.delete();
+
+        final Configuration conf = new BaseConfiguration();
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_FORMAT, "gryo");
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION, graphLocation);
+        final TinkerGraph graph = TinkerGraph.open(conf);
+        TinkerFactory.generateTheCrew(graph);
+        graph.close();
+
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_DEFAULT_VERTEX_PROPERTY_CARDINALITY, VertexProperty.Cardinality.list.toString());
+        final TinkerGraph reloadedGraph = TinkerGraph.open(conf);
+        IoTest.assertCrewGraph(reloadedGraph, false);
+        reloadedGraph.close();
+    }
+
+    @Test
+    public void shouldPersistWithRelativePath() {
+        final String graphLocation = TestHelper.convertToRelative(TinkerGraphTest.class,
+                new File(TestHelper.makeTestDataDirectory(TinkerGraphTest.class)))  + "shouldPersistToGryoRelative.kryo";
+        final File f = new File(graphLocation);
+        if (f.exists() && f.isFile()) f.delete();
+
+        final Configuration conf = new BaseConfiguration();
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_FORMAT, "gryo");
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION, graphLocation);
+        final TinkerGraph graph = TinkerGraph.open(conf);
+        TinkerFactory.generateModern(graph);
+        graph.close();
+
+        final TinkerGraph reloadedGraph = TinkerGraph.open(conf);
+        IoTest.assertModernGraph(reloadedGraph, true, false);
+        reloadedGraph.close();
+    }
+
+    @Test
+    public void shouldPersistToAnyGraphFormat() {
+        final String graphLocation = TestHelper.makeTestDataDirectory(TinkerGraphTest.class) + "shouldPersistToAnyGraphFormat.dat";
+        final File f = new File(graphLocation);
+        if (f.exists() && f.isFile()) f.delete();
+
+        final Configuration conf = new BaseConfiguration();
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_FORMAT, TestIoBuilder.class.getName());
+        conf.setProperty(TinkerGraph.GREMLIN_TINKERGRAPH_GRAPH_LOCATION, graphLocation);
+        final TinkerGraph graph = TinkerGraph.open(conf);
+        TinkerFactory.generateModern(graph);
+
+        //Test write graph
+        graph.close();
+        assertEquals(TestIoBuilder.calledRegistry, 0);
+        assertEquals(TestIoBuilder.calledOnMapper, 1);
+        assertEquals(TestIoBuilder.calledGraph, 1);
+        assertEquals(TestIoBuilder.calledCreate, 1);
+
+        try (BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(f))){
+            os.write("dummy string".getBytes());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        //Test read graph
+        final TinkerGraph readGraph = TinkerGraph.open(conf);
+        assertEquals(TestIoBuilder.calledRegistry, 0);
+        assertEquals(TestIoBuilder.calledOnMapper, 1);
+        assertEquals(TestIoBuilder.calledGraph, 1);
+        assertEquals(TestIoBuilder.calledCreate, 1);
+    }
+
+    @Test
+    public void shouldSerializeWithColorClassResolverToTinkerGraph() throws Exception {
+        final Map<String,Color> colors = new HashMap<>();
+        colors.put("red", Color.RED);
+        colors.put("green", Color.GREEN);
+
+        final ArrayList<Color> colorList = new ArrayList<>(Arrays.asList(Color.RED, Color.GREEN));
+
+        final Supplier<ClassResolver> classResolver = new CustomClassResolverSupplier();
+        final GryoMapper mapper = GryoMapper.build().addRegistry(TinkerIoRegistry.getInstance()).classResolver(classResolver).create();
+        final Kryo kryo = mapper.createMapper();
+        try (final ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
+            final Output out = new Output(stream);
+
+            kryo.writeObject(out, colorList);
+            out.flush();
+            final byte[] b = stream.toByteArray();
+
+            try (final InputStream inputStream = new ByteArrayInputStream(b)) {
+                final Input input = new Input(inputStream);
+                final List m = kryo.readObject(input, ArrayList.class);
+                final TinkerGraph readX = (TinkerGraph) m.get(0);
+                assertEquals(104, IteratorUtils.count(readX.vertices()));
+                assertEquals(102, IteratorUtils.count(readX.edges()));
+            }
+        }
+    }
+
+    /**
+     * Coerces a {@code Color} to a {@link TinkerGraph} during serialization.  Demonstrates how custom serializers
+     * can be developed that can coerce one value to another during serialization.
+     */
+    public final static class ColorToTinkerGraphSerializer extends Serializer<Color> {
+        public ColorToTinkerGraphSerializer() {
+        }
+
+        @Override
+        public void write(final Kryo kryo, final Output output, final Color color) {
+            final TinkerGraph graph = TinkerGraph.open();
+            final Vertex v = graph.addVertex(T.id, 1, T.label, "color", "name", color.toString());
+            final Vertex vRed = graph.addVertex(T.id, 2, T.label, "primary", "name", "red");
+            final Vertex vGreen = graph.addVertex(T.id, 3, T.label, "primary", "name", "green");
+            final Vertex vBlue = graph.addVertex(T.id, 4, T.label, "primary", "name", "blue");
+
+            v.addEdge("hasComponent", vRed, "amount", color.getRed());
+            v.addEdge("hasComponent", vGreen, "amount", color.getGreen());
+            v.addEdge("hasComponent", vBlue, "amount", color.getBlue());
+
+            // make some junk so the graph is kinda big
+            generate(graph);
+
+            try (final ByteArrayOutputStream stream = new ByteArrayOutputStream()) {
+                GryoWriter.build().mapper(() -> kryo).create().writeGraph(stream, graph);
+                final byte[] bytes = stream.toByteArray();
+                output.writeInt(bytes.length);
+                output.write(bytes);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        }
+
+        @Override
+        public Color read(final Kryo kryo, final Input input, final Class<Color> colorClass) {
+            throw new UnsupportedOperationException("IoX writes to DetachedVertex and can't be read back in as IoX");
+        }
+
+        private static void generate(final Graph graph) {
+            final int size = 100;
+            final List<Object> ids = new ArrayList<>();
+            final Vertex v = graph.addVertex("sin", 0.0f, "cos", 1.0f, "ii", 0f);
+            ids.add(v.id());
+
+            final GraphTraversalSource g = graph.traversal();
+
+            final Random rand = new Random();
+            for (int ii = 1; ii < size; ii++) {
+                final Vertex t = graph.addVertex("ii", ii, "sin", Math.sin(ii / 5.0f), "cos", Math.cos(ii / 5.0f));
+                final Vertex u = g.V(ids.get(rand.nextInt(ids.size()))).next();
+                t.addEdge("linked", u);
+                ids.add(u.id());
+                ids.add(v.id());
+            }
+        }
+    }
+
+    public static class CustomClassResolverSupplier implements Supplier<ClassResolver> {
+        @Override
+        public ClassResolver get() {
+            return new CustomClassResolver();
+        }
+    }
+
+    public static class CustomClassResolver extends GryoClassResolver {
+        private ColorToTinkerGraphSerializer colorToGraphSerializer = new ColorToTinkerGraphSerializer();
+
+        public Registration getRegistration(final Class clazz) {
+            if (Color.class.isAssignableFrom(clazz)) {
+                final Registration registration = super.getRegistration(TinkerGraph.class);
+                return new Registration(registration.getType(), colorToGraphSerializer, registration.getId());
+            } else {
+                return super.getRegistration(clazz);
+            }
+        }
+    }
+
+    public static class TestIoBuilder implements Io.Builder {
+
+        static int calledRegistry, calledGraph, calledCreate, calledOnMapper;
+
+        public TestIoBuilder(){
+            //Looks awkward to reset static vars inside a constructor, but makes sense from testing perspective
+            calledRegistry = 0;
+            calledGraph = 0;
+            calledCreate = 0;
+            calledOnMapper = 0;
+        }
+
+        @Override
+        public Io.Builder<? extends Io> registry(final IoRegistry registry) {
+            calledRegistry++;
+            return this;
+        }
+
+        @Override
+        public Io.Builder<? extends Io> onMapper(final Consumer onMapper) {
+            calledOnMapper++;
+            return this;
+        }
+
+        @Override
+        public Io.Builder<? extends Io> graph(final Graph graph) {
+            calledGraph++;
+            return this;
+        }
+
+        @Override
+        public Io create() {
+            calledCreate++;
+            return mock(Io.class);
         }
     }
 }

@@ -28,11 +28,8 @@ import org.apache.tinkerpop.gremlin.AbstractGremlinTest;
 import org.apache.tinkerpop.gremlin.LoadGraphWith;
 import org.apache.tinkerpop.gremlin.structure.io.GraphWriter;
 import org.apache.tinkerpop.gremlin.structure.io.graphml.GraphMLIo;
-import org.apache.tinkerpop.gremlin.structure.io.graphml.GraphMLWriter;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONIo;
-import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONWriter;
 import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoIo;
-import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoWriter;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.experimental.runners.Enclosed;
@@ -45,8 +42,10 @@ import java.util.Optional;
 
 /**
  * @author Stephen Mallette (http://stephen.genoprime.com)
+ * @deprecated As of release 3.2.1, replaced by gremlin-benchmark.
  */
 @RunWith(Enclosed.class)
+@Deprecated
 public class GraphWritePerformanceTest {
 
     @AxisRange(min = 0, max = 1)
@@ -66,7 +65,7 @@ public class GraphWritePerformanceTest {
                 tryBatchCommit(graph, ix);
             }
 
-            assertVertexEdgeCounts(verticesToGenerate, 0).accept(graph);
+            assertVertexEdgeCounts(graph, verticesToGenerate, 0);
         }
 
         @Test
@@ -83,7 +82,7 @@ public class GraphWritePerformanceTest {
                 tryBatchCommit(graph, ix);
             }
 
-            assertVertexEdgeCounts(verticesToGenerate, verticesToGenerate - 1).accept(graph);
+            assertVertexEdgeCounts(graph, verticesToGenerate, verticesToGenerate - 1);
         }
     }
 
